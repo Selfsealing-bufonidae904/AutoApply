@@ -7,7 +7,7 @@ Requirement traceability:
     FR-009  Configuration endpoints
     FR-010  Analytics endpoints
     FR-011  Setup status endpoint
-    FR-018  Claude Code detection
+    FR-018  AI provider detection
     NFR-007 Path traversal security
     NFR-009 Error handler JSON responses
 """
@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -161,7 +162,7 @@ class TestBotControl:
             "errors_today",
             "start_time",
             "uptime_seconds",
-            "claude_code_available",
+            "ai_available",
             "awaiting_review",
         }
         assert expected_keys.issubset(data.keys())
@@ -447,7 +448,7 @@ class TestExperienceFiles:
         data = resp.get_json()
         assert data["file_count"] == 2
         assert data["total_words"] == 5
-        assert "claude_code_available" in data
+        assert "ai_available" in data
 
 
 # ===================================================================
@@ -686,7 +687,7 @@ class TestSetup:
         assert resp.status_code == 200
         data = resp.get_json()
         assert data["is_first_run"] is True
-        assert "claude_code_available" in data
+        assert "ai_available" in data
 
     def test_setup_status_after_config(self, app_client):
         """AC-011-2: After saving config, is_first_run is False."""
@@ -700,26 +701,28 @@ class TestSetup:
 
 
 # ===================================================================
-# FR-018 — Claude Code Detection
+# FR-018 — AI Provider Detection
 # ===================================================================
 
 
-class TestClaudeCodeDetection:
-    """FR-018: Check whether claude CLI is available."""
+class TestAIDetection:
+    """FR-018: Check whether AI provider is configured."""
 
-    def test_check_claude_available_true(self, app_client, monkeypatch):
-        """AC-031-1: check_claude_code_available returns True -> available."""
+    def test_ai_available_true(self, app_client, monkeypatch):
+        """AC-031-1: AI configured -> ai_available is True."""
         client, _db, _tmp = app_client
-        monkeypatch.setattr("app._ai_check_claude", lambda: True)
+        monkeypatch.setattr("app._check_ai_available", lambda cfg: True)
+        monkeypatch.setattr("app.load_config", lambda: SimpleNamespace(llm=SimpleNamespace(provider="anthropic", api_key="sk-test")))
         resp = client.get("/api/bot/status")
-        assert resp.get_json()["claude_code_available"] is True
+        assert resp.get_json()["ai_available"] is True
 
-    def test_check_claude_available_false(self, app_client, monkeypatch):
-        """AC-031-2: check_claude_code_available returns False -> not available."""
+    def test_ai_available_false(self, app_client, monkeypatch):
+        """AC-031-2: AI not configured -> ai_available is False."""
         client, _db, _tmp = app_client
-        monkeypatch.setattr("app._ai_check_claude", lambda: False)
+        monkeypatch.setattr("app._check_ai_available", lambda cfg: False)
+        monkeypatch.setattr("app.load_config", lambda: SimpleNamespace(llm=SimpleNamespace(provider="", api_key="")))
         resp = client.get("/api/bot/status")
-        assert resp.get_json()["claude_code_available"] is False
+        assert resp.get_json()["ai_available"] is False
 
 
 # ===================================================================

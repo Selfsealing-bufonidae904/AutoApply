@@ -1,32 +1,35 @@
-"""Claude Code AI Engine — generates tailored resumes and cover letters.
+"""AI Engine — generates tailored resumes and cover letters via LLM APIs.
 
-Invokes Claude Code CLI via subprocess (--print flag) for non-interactive
-document generation. Falls back to static templates when Claude Code is
-unavailable.
+Supports Anthropic, OpenAI, Google (Gemini), and DeepSeek as providers.
+Falls back to static templates when no API key is configured.
 """
 
 from __future__ import annotations
 
+import json
 import logging
-import shutil
-import subprocess
 from datetime import datetime
 from pathlib import Path
 
+import requests
+
 logger = logging.getLogger(__name__)
 
-# On Windows, fall back to claude.cmd if claude is not in PATH
-def _find_claude_cmd() -> str:
-    """Find the Claude Code CLI command, preferring the exact path."""
-    path = shutil.which("claude")
-    if path:
-        return path
-    path = shutil.which("claude.cmd")
-    if path:
-        return path
-    return "claude"
+# Default models per provider
+DEFAULT_MODELS = {
+    "anthropic": "claude-sonnet-4-20250514",
+    "openai": "gpt-4o",
+    "google": "gemini-2.0-flash",
+    "deepseek": "deepseek-chat",
+}
 
-CLAUDE_CMD = _find_claude_cmd()
+# API endpoints per provider
+API_ENDPOINTS = {
+    "anthropic": "https://api.anthropic.com/v1/messages",
+    "openai": "https://api.openai.com/v1/chat/completions",
+    "google": "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+    "deepseek": "https://api.deepseek.com/v1/chat/completions",
+}
 
 RESUME_PROMPT = """
 You are an expert resume writer. Create a tailored, ATS-optimised resume for this specific job.
@@ -106,61 +109,171 @@ Bio / tone preference: {bio}
 """
 
 
-def check_claude_code_available() -> bool:
-    """Check if Claude Code CLI is installed and responsive.
+def check_ai_available(llm_config) -> bool:
+    """Check if an LLM provider is configured with an API key.
 
-    Runs ``claude --version`` with a 10-second timeout.
-    Returns True if the command exits with code 0, False otherwise.
+    Args:
+        llm_config: LLMConfig with provider and api_key fields.
+
+    Returns:
+        True if provider and api_key are set, False otherwise.
     """
+    if not llm_config:
+        return False
+    return bool(llm_config.provider and llm_config.api_key)
+
+
+def validate_api_key(provider: str, api_key: str, model: str | None = None) -> bool:
+    """Validate an API key by making a minimal test request.
+
+    Args:
+        provider: One of "anthropic", "openai", "google", "deepseek".
+        api_key: The API key to validate.
+        model: Optional model name override.
+
+    Returns:
+        True if the key is valid, False otherwise.
+    """
+    model = model or DEFAULT_MODELS.get(provider, "")
     try:
-        result = subprocess.run(
-            [CLAUDE_CMD, "--version"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        return result.returncode == 0
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        _call_llm(provider, api_key, model, "Reply with OK", timeout=15)
+        return True
+    except Exception:
         return False
 
 
-def invoke_claude_code(prompt: str, timeout_seconds: int = 120) -> str:
-    """Run Claude Code non-interactively via --print flag.
+def _call_llm(
+    provider: str,
+    api_key: str,
+    model: str,
+    prompt: str,
+    timeout: int = 120,
+) -> str:
+    """Call an LLM API and return the text response.
 
     Args:
-        prompt: Full prompt text to send to Claude Code.
+        provider: One of "anthropic", "openai", "google", "deepseek".
+        api_key: API key for the provider.
+        model: Model identifier.
+        prompt: The prompt to send.
+        timeout: Request timeout in seconds.
+
+    Returns:
+        The generated text content.
+
+    Raises:
+        RuntimeError: If the API call fails.
+    """
+    if provider == "anthropic":
+        return _call_anthropic(api_key, model, prompt, timeout)
+    elif provider == "google":
+        return _call_google(api_key, model, prompt, timeout)
+    elif provider in ("openai", "deepseek"):
+        return _call_openai_compatible(provider, api_key, model, prompt, timeout)
+    else:
+        raise RuntimeError(f"Unsupported LLM provider: {provider}")
+
+
+def _call_anthropic(api_key: str, model: str, prompt: str, timeout: int) -> str:
+    """Call Anthropic Messages API."""
+    resp = requests.post(
+        API_ENDPOINTS["anthropic"],
+        headers={
+            "x-api-key": api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        },
+        json={
+            "model": model,
+            "max_tokens": 4096,
+            "messages": [{"role": "user", "content": prompt}],
+        },
+        timeout=timeout,
+    )
+    if resp.status_code != 200:
+        _raise_api_error("Anthropic", resp)
+    data = resp.json()
+    return data["content"][0]["text"].strip()
+
+
+def _call_openai_compatible(
+    provider: str, api_key: str, model: str, prompt: str, timeout: int
+) -> str:
+    """Call OpenAI-compatible API (OpenAI, DeepSeek)."""
+    resp = requests.post(
+        API_ENDPOINTS[provider],
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": 4096,
+        },
+        timeout=timeout,
+    )
+    if resp.status_code != 200:
+        _raise_api_error(provider.title(), resp)
+    data = resp.json()
+    return data["choices"][0]["message"]["content"].strip()
+
+
+def _call_google(api_key: str, model: str, prompt: str, timeout: int) -> str:
+    """Call Google Gemini API."""
+    url = API_ENDPOINTS["google"].format(model=model)
+    resp = requests.post(
+        url,
+        params={"key": api_key},
+        headers={"Content-Type": "application/json"},
+        json={
+            "contents": [{"parts": [{"text": prompt}]}],
+            "generationConfig": {"maxOutputTokens": 4096},
+        },
+        timeout=timeout,
+    )
+    if resp.status_code != 200:
+        _raise_api_error("Google", resp)
+    data = resp.json()
+    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+
+def _raise_api_error(provider: str, resp: requests.Response) -> None:
+    """Extract error message from API response and raise RuntimeError."""
+    try:
+        body = resp.json()
+        msg = body.get("error", {})
+        if isinstance(msg, dict):
+            msg = msg.get("message", resp.text)
+    except Exception:
+        msg = resp.text
+    raise RuntimeError(f"{provider} API error ({resp.status_code}): {msg}")
+
+
+def invoke_llm(prompt: str, llm_config, timeout_seconds: int = 120) -> str:
+    """Generate text using the configured LLM provider.
+
+    Args:
+        prompt: Full prompt text.
+        llm_config: LLMConfig with provider, api_key, model fields.
         timeout_seconds: Maximum wait time (default 120s).
 
     Returns:
-        Stripped stdout from Claude Code.
+        Generated text content.
 
     Raises:
-        RuntimeError: If Claude Code is not found, returns non-zero, or times out.
+        RuntimeError: If no API key is configured or the API call fails.
     """
-    try:
-        result = subprocess.run(
-            [CLAUDE_CMD, "--print", prompt],
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds,
-        )
-    except FileNotFoundError:
+    if not llm_config or not llm_config.api_key:
         raise RuntimeError(
-            f"Claude Code CLI not found: '{CLAUDE_CMD}'. "
-            "Install from https://docs.anthropic.com/en/docs/claude-code"
-        )
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(
-            f"Claude Code timed out after {timeout_seconds}s. "
-            "Try again or increase timeout."
+            "No AI provider configured. Add an API key in Settings → AI Provider."
         )
 
-    if result.returncode != 0:
-        raise RuntimeError(
-            f"Claude Code failed (exit {result.returncode}): {result.stderr.strip()}"
-        )
+    provider = llm_config.provider
+    api_key = llm_config.api_key
+    model = llm_config.model or DEFAULT_MODELS.get(provider, "")
 
-    return result.stdout.strip()
+    return _call_llm(provider, api_key, model, prompt, timeout_seconds)
 
 
 def read_all_experience_files(experience_dir: Path) -> str:
@@ -196,11 +309,12 @@ def generate_documents(
     experience_dir: Path,
     output_dir_resumes: Path,
     output_dir_cover_letters: Path,
+    llm_config=None,
 ) -> tuple[Path, Path]:
     """Generate tailored resume and cover letter for a job application.
 
-    Reads experience files, calls Claude Code twice (resume + cover letter),
-    saves outputs to disk, and returns paths.
+    Reads experience files, calls the configured LLM twice (resume + cover
+    letter), saves outputs to disk, and returns paths.
 
     Args:
         job: Object with ``.id`` (str), ``.raw.company`` (str),
@@ -210,12 +324,13 @@ def generate_documents(
         experience_dir: Path to experience .txt files.
         output_dir_resumes: Where to save resume .md and .pdf files.
         output_dir_cover_letters: Where to save cover letter .txt files.
+        llm_config: LLMConfig with provider, api_key, model.
 
     Returns:
         Tuple of (resume_pdf_path, cover_letter_txt_path).
 
     Raises:
-        RuntimeError: If Claude Code invocation fails.
+        RuntimeError: If LLM invocation fails.
     """
     from core.resume_renderer import render_resume_to_pdf
 
@@ -229,8 +344,8 @@ def generate_documents(
     output_dir_resumes.mkdir(parents=True, exist_ok=True)
     output_dir_cover_letters.mkdir(parents=True, exist_ok=True)
 
-    # Generate resume via Claude Code
-    resume_md_text = invoke_claude_code(RESUME_PROMPT.format(
+    # Generate resume via LLM
+    resume_md_text = invoke_llm(RESUME_PROMPT.format(
         experience_files_content=experience_content,
         job_description=job.raw.description,
         full_name=profile.full_name,
@@ -239,15 +354,15 @@ def generate_documents(
         location=profile.location,
         linkedin_url=profile.linkedin_url or "N/A",
         portfolio_url=profile.portfolio_url or "N/A",
-    ))
+    ), llm_config)
 
-    # Generate cover letter via Claude Code
-    cover_letter_text = invoke_claude_code(COVER_LETTER_PROMPT.format(
+    # Generate cover letter via LLM
+    cover_letter_text = invoke_llm(COVER_LETTER_PROMPT.format(
         experience_files_content=experience_content,
         job_description=job.raw.description,
         full_name=profile.full_name,
         bio=profile.bio,
-    ))
+    ), llm_config)
 
     # Save resume Markdown + PDF
     resume_md_path = output_dir_resumes / f"{base_name}.md"

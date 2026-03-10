@@ -44,22 +44,22 @@ education_and_certs.txt
 When AutoApply finds a matching job:
 
 1. It reads **all** your experience files
-2. It sends them to Claude Code along with the job description
-3. Claude Code picks the **most relevant** experiences for that specific job
+2. It sends them to your configured AI provider along with the job description
+3. The AI picks the **most relevant** experiences for that specific job
 4. It generates a tailored resume (PDF) and cover letter (text)
 5. Both are saved in `~/.autoapply/profile/resumes/` and `~/.autoapply/profile/cover_letters/`
 
-Claude Code is instructed to **never invent or exaggerate** anything not in your files. It only selects and rephrases what you wrote.
+The AI is instructed to **never invent or exaggerate** anything not in your files. It only selects and rephrases what you wrote.
 
 ## Tips
 
-- **More detail is better** — you can always add more files. Claude Code will pick what's relevant.
+- **More detail is better** — you can always add more files. The AI will pick what's relevant.
 - **Don't worry about formatting** — just write naturally. The AI handles formatting.
 - **Update regularly** — add new roles, projects, and skills as your career progresses.
 - **One topic per file is fine too** — some people prefer `projects.txt`, `skills.txt`, `leadership.txt` instead of one-per-job. Both work.
 
-## If Claude Code Isn't Installed
+## If No AI Provider Is Configured
 
-Without Claude Code, AutoApply uses your fallback resume (a PDF you upload) and a static cover letter template from Settings. You'll see a yellow warning banner on the dashboard.
+Without an API key, AutoApply uses your fallback resume (a PDF you upload) and a static cover letter template from Settings. You'll see a yellow warning banner on the dashboard.
 
-To get AI-tailored documents, [install Claude Code](https://docs.anthropic.com/en/docs/claude-code) and authenticate it.
+To get AI-tailored documents, add your API key in **Settings → AI Provider**.

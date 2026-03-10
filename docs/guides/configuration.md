@@ -15,7 +15,7 @@ Your personal information used in applications.
 | Bio | Short description of yourself — sets the tone for cover letters |
 | LinkedIn URL | Your LinkedIn profile URL (optional, used on Greenhouse/Lever forms) |
 | Portfolio URL | Your personal website or portfolio (optional) |
-| Fallback resume | Path to a pre-made PDF resume used when Claude Code isn't available |
+| Fallback resume | Path to a pre-made PDF resume used when no AI provider is configured |
 
 ## Search Criteria
 
@@ -69,7 +69,7 @@ How the automation runs.
 | Delay | 45 seconds | Wait time between applications |
 | Search interval | 30 minutes | How often to search for new jobs |
 | Application mode | Full Auto | How applications are handled (see below) |
-| Cover letter template | (empty) | Static cover letter used when Claude Code is unavailable |
+| Cover letter template | (empty) | Static cover letter used when no AI provider is configured |
 
 ### Application Modes
 

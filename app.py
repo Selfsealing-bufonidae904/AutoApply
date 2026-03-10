@@ -21,7 +21,8 @@ from config.settings import (
     load_config,
     save_config,
 )
-from core.ai_engine import check_claude_code_available as _ai_check_claude
+from core.ai_engine import check_ai_available as _check_ai_available
+from core.ai_engine import validate_api_key as _validate_api_key
 from core.scheduler import BotScheduler
 from db.database import Database
 from bot.state import BotState
@@ -58,7 +59,7 @@ def _scheduler_start_bot() -> None:
         def _emit(event_name, data):
             socketio.emit(event_name, data)
             status_dict = bot_state.get_status_dict()
-            status_dict["claude_code_available"] = check_claude_code_available()
+            status_dict["ai_available"] = check_ai_available()
             socketio.emit("bot_status", status_dict)
 
         try:
@@ -66,7 +67,7 @@ def _scheduler_start_bot() -> None:
         finally:
             bot_state.stop()
             status_dict = bot_state.get_status_dict()
-            status_dict["claude_code_available"] = check_claude_code_available()
+            status_dict["ai_available"] = check_ai_available()
             socketio.emit("bot_status", status_dict)
 
     _bot_thread = threading.Thread(target=_run, daemon=True, name="bot-worker")
@@ -95,9 +96,12 @@ bot_scheduler = BotScheduler(
 SAFE_FILENAME_RE = re.compile(r"^[a-zA-Z0-9_\- ]+\.txt$")
 
 
-def check_claude_code_available() -> bool:
-    """Check if Claude Code CLI is available (delegates to core.ai_engine)."""
-    return _ai_check_claude()
+def check_ai_available() -> bool:
+    """Check if an AI provider is configured with an API key."""
+    config = load_config()
+    if not config:
+        return False
+    return _check_ai_available(config.llm)
 
 
 def validate_filename(filename: str) -> str | None:
@@ -173,7 +177,7 @@ def bot_stop():
 @app.route("/api/bot/status", methods=["GET"])
 def bot_status():
     status_dict = bot_state.get_status_dict()
-    status_dict["claude_code_available"] = check_claude_code_available()
+    status_dict["ai_available"] = check_ai_available()
     status_dict["schedule_enabled"] = bot_scheduler.running
     return jsonify(status_dict)
 
@@ -362,6 +366,17 @@ def get_resume(app_id: int):
     return send_file(resume_path, mimetype="application/pdf")
 
 
+@app.route("/api/applications/<int:app_id>/description", methods=["GET"])
+def get_job_description(app_id: int):
+    application = db.get_application(app_id)
+    if not application:
+        return jsonify({"error": "Application not found"}), 404
+    desc_path = application.description_path
+    if not desc_path or not Path(desc_path).exists():
+        return jsonify({"error": "Job description not found"}), 404
+    return send_file(desc_path, mimetype="text/html")
+
+
 # ---------------------------------------------------------------------------
 # Profile / Experience Files
 # ---------------------------------------------------------------------------
@@ -439,7 +454,7 @@ def profile_status():
     return jsonify({
         "file_count": len(txt_files),
         "total_words": total_words,
-        "claude_code_available": check_claude_code_available(),
+        "ai_available": check_ai_available(),
     })
 
 
@@ -507,8 +522,26 @@ def get_feed_events():
 def setup_status():
     return jsonify({
         "is_first_run": is_first_run(),
-        "claude_code_available": check_claude_code_available(),
+        "ai_available": check_ai_available(),
     })
+
+
+# ---------------------------------------------------------------------------
+# AI Provider
+# ---------------------------------------------------------------------------
+
+@app.route("/api/ai/validate", methods=["POST"])
+def validate_ai_key():
+    data = request.get_json(force=True) or {}
+    provider = data.get("provider", "")
+    api_key = data.get("api_key", "")
+    model = data.get("model", "")
+    if not provider or not api_key:
+        return jsonify({"error": "provider and api_key are required"}), 400
+    if provider not in ("anthropic", "openai", "google", "deepseek"):
+        return jsonify({"error": f"Unsupported provider: {provider}"}), 400
+    valid = _validate_api_key(provider, api_key, model or None)
+    return jsonify({"valid": valid})
 
 
 # ---------------------------------------------------------------------------

@@ -3,14 +3,12 @@
 ## What You Need
 
 - **Python 3.11 or newer** — [Download from python.org](https://python.org/downloads/)
-- **Node.js 18+** — Only needed for the desktop app ([Download](https://nodejs.org))
-- **Claude Code CLI** (optional) — For AI-generated resumes and cover letters ([Install guide](https://docs.anthropic.com/en/docs/claude-code))
+- **Node.js 18+** — [Download](https://nodejs.org)
+- **AI API key** (optional) — For AI-generated resumes and cover letters. Supports Anthropic, OpenAI, Google, or DeepSeek. Configure in Settings → AI Provider.
 
-Without Claude Code, AutoApply still works — it just uses generic templates instead of tailored documents.
+Without an API key, AutoApply still works — it just uses generic templates instead of tailored documents.
 
 ## Install and Run
-
-### Option A: Browser Mode (simplest)
 
 ```bash
 # Set up Python
@@ -26,24 +24,7 @@ python setup.py
 # Install Playwright's Chromium browser (required for job searching/applying)
 playwright install chromium
 
-# Start
-python run.py
-```
-
-Your browser opens to `http://localhost:5000`.
-
-### Option B: Desktop App
-
-```bash
-# Set up Python (same as above)
-python -m venv venv
-venv\Scripts\activate        # or source venv/bin/activate
-python setup.py
-
-# Install Playwright's Chromium browser (required for job searching/applying)
-playwright install chromium
-
-# Set up and launch the desktop app
+# Launch the desktop app
 cd electron
 npm install
 npm start
@@ -59,7 +40,7 @@ On first launch, a wizard walks you through 7 steps:
 2. **Job Preferences** — Job titles you're targeting, preferred locations, remote preference
 3. **Filters** — Minimum salary, keywords to include or exclude
 4. **Experience Level** — Mid, senior, staff, etc.
-5. **Fallback Resume** — Upload a PDF resume for when Claude Code isn't available
+5. **Fallback Resume** — Upload a PDF resume for when no AI provider is configured
 6. **Platform Login** — Log into LinkedIn and/or Indeed
 7. **Done** — Summary and go to dashboard
 

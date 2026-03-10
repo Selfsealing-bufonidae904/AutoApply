@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import re
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -142,13 +144,16 @@ def run_bot(
                             )
                             continue
 
+                        # Save job description for interview prep
+                        desc_path = _save_job_description(scored, profile_dir)
+
                         # Generate documents
                         emit(
                             "GENERATING",
                             job_title=raw_job.title,
                             company=raw_job.company,
                             platform=raw_job.platform,
-                            message="Generating resume and cover letter via Claude Code...",
+                            message="Generating tailored resume and cover letter...",
                         )
 
                         resume_path, cl_path, cover_letter_text = _generate_docs(
@@ -192,6 +197,7 @@ def run_bot(
                                 _save_application(
                                     db, scored, resume_path, cl_path,
                                     cover_letter_text, manual_result,
+                                    description_path=desc_path,
                                 )
                                 emit(
                                     "APPLIED",
@@ -219,6 +225,7 @@ def run_bot(
                         _save_application(
                             db, scored, resume_path, cl_path,
                             cover_letter_text, result,
+                            description_path=desc_path,
                         )
 
                         # Emit result
@@ -320,6 +327,7 @@ def _generate_docs(scored: ScoredJob, config, profile_dir: Path):
             experience_dir=profile_dir / "experiences",
             output_dir_resumes=profile_dir / "resumes",
             output_dir_cover_letters=profile_dir / "cover_letters",
+            llm_config=config.llm,
         )
         cover_letter_text = cl_path.read_text(encoding="utf-8")
     except Exception as e:
@@ -349,7 +357,71 @@ def _apply_to_job(scored, resume_path, cover_letter_text, config, page):
     return applier.apply(scored, resume_path, cover_letter_text, config.profile)
 
 
-def _save_application(db, scored, resume_path, cl_path, cover_letter_text, result):
+def _save_job_description(scored: ScoredJob, profile_dir: Path) -> Path | None:
+    """Save the job description as an HTML file for later reference.
+
+    Returns the path to the saved file, or None on failure.
+    """
+    try:
+        desc_dir = profile_dir / "job_descriptions"
+        desc_dir.mkdir(parents=True, exist_ok=True)
+
+        safe_company = re.sub(r"[^a-zA-Z0-9]+", "-", scored.raw.company).strip("-").lower()
+        date_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        base_name = f"{scored.raw.external_id[:8]}_{safe_company}_{date_str}"
+        desc_path = desc_dir / f"{base_name}.html"
+
+        html = (
+            "<!DOCTYPE html>\n<html lang='en'>\n<head>\n"
+            "<meta charset='utf-8'>\n"
+            f"<title>{_esc(scored.raw.title)} — {_esc(scored.raw.company)}</title>\n"
+            "<style>body{font-family:system-ui,sans-serif;max-width:800px;"
+            "margin:40px auto;padding:0 20px;line-height:1.6;color:#222}"
+            "h1{font-size:1.4rem;margin-bottom:4px}"
+            ".meta{color:#666;font-size:.9rem;margin-bottom:24px}"
+            ".meta span{margin-right:16px}"
+            "a{color:#2563eb}</style>\n"
+            "</head>\n<body>\n"
+            f"<h1>{_esc(scored.raw.title)}</h1>\n"
+            f"<div class='meta'>"
+            f"<span><strong>{_esc(scored.raw.company)}</strong></span>"
+            f"<span>{_esc(scored.raw.location or '')}</span>"
+            f"<span>{_esc(scored.raw.salary or '')}</span>"
+            f"</div>\n"
+            f"<div class='description'>\n{_plain_to_html(scored.raw.description)}\n</div>\n"
+            f"<hr>\n<p class='meta'>Source: <a href='{_esc(scored.raw.apply_url)}'>"
+            f"{_esc(scored.raw.apply_url)}</a> | Saved {date_str}</p>\n"
+            "</body>\n</html>"
+        )
+
+        desc_path.write_text(html, encoding="utf-8")
+        return desc_path
+    except Exception as e:
+        logger.warning("Failed to save job description: %s", e)
+        return None
+
+
+def _esc(text: str) -> str:
+    """Minimal HTML escaping."""
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def _plain_to_html(text: str) -> str:
+    """Convert plain text to simple HTML paragraphs."""
+    escaped = _esc(text)
+    paragraphs = escaped.split("\n\n")
+    if len(paragraphs) > 1:
+        return "\n".join(f"<p>{p.strip()}</p>" for p in paragraphs if p.strip())
+    return escaped.replace("\n", "<br>\n")
+
+
+def _save_application(db, scored, resume_path, cl_path, cover_letter_text, result,
+                      description_path=None):
     """Save an application record to the database."""
     try:
         status = "applied" if result.success else (
@@ -369,6 +441,7 @@ def _save_application(db, scored, resume_path, cl_path, cover_letter_text, resul
             cover_letter_text=cover_letter_text,
             status=status,
             error_message=result.error_message,
+            description_path=str(description_path) if description_path else None,
         )
     except Exception as e:
         logger.error("Failed to save application to DB: %s", e)

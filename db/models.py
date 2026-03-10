@@ -16,6 +16,7 @@ class Application(BaseModel):
     resume_path: str | None
     cover_letter_path: str | None
     cover_letter_text: str | None
+    description_path: str | None
     status: str
     error_message: str | None
     applied_at: str

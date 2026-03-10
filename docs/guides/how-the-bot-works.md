@@ -5,9 +5,9 @@ When you hit **Start**, AutoApply runs a continuous loop: search for jobs, score
 ## The Pipeline
 
 ```
-Search for jobs  →  Score & filter  →  Generate resume  →  Apply  →  Save result
-      ↑                                                                    │
-      └────────────────── wait, then repeat ───────────────────────────────┘
+Search for jobs  →  Score & filter  →  Save JD  →  Generate resume  →  Apply  →  Save result
+      ↑                                                                                │
+      └────────────────────── wait, then repeat ───────────────────────────────────────┘
 ```
 
 ### 1. Search
@@ -34,13 +34,17 @@ Jobs are **automatically skipped** if:
 
 Jobs scoring below your **minimum match score** (default: 75) are also skipped.
 
-### 3. Generate Documents
+### 3. Save Job Description
 
-For jobs that pass the filter, AutoApply creates a tailored resume and cover letter using Claude Code. See [How AI Generation Works](ai-generation.md) for details.
+Before generating documents, AutoApply saves the full job description as a styled HTML file in `~/.autoapply/profile/job_descriptions/`. This is linked to the application in the dashboard — click "View Job Description" in the detail modal to review it later for interview prep, even if the original posting is taken down.
 
-If Claude Code isn't installed, it uses your fallback resume and static cover letter template instead.
+### 4. Generate Documents
 
-### 4. Apply
+For jobs that pass the filter, AutoApply creates a tailored resume and cover letter using your configured AI provider. See [How AI Generation Works](ai-generation.md) for details.
+
+If no AI provider is configured, it uses your fallback resume and static cover letter template instead.
+
+### 5. Apply
 
 AutoApply fills out the application form automatically:
 - Enters your name, email, phone number
@@ -53,7 +57,7 @@ If it hits a CAPTCHA, it stops and logs the error — it won't try to solve CAPT
 
 If the job redirects to an unsupported application system (like Taleo or iCIMS), it marks the job as "manual required." AutoApply can automate LinkedIn Easy Apply, Indeed Quick Apply, Greenhouse, Lever, Workday, and Ashby forms.
 
-### 5. Save and Repeat
+### 6. Save and Repeat
 
 Every application attempt is saved to your database with the result (applied, error, manual required, or captcha). You can see all of them in the Applications tab.
 
@@ -62,7 +66,7 @@ Click any row in the Applications table to open a **detail view** showing:
 - Current status (editable) and error message (if any)
 - Notes field for tracking follow-ups
 - Activity timeline showing every event the bot logged for that job
-- Links to the original job posting, generated resume, and cover letter
+- Links to the original job posting, saved job description, generated resume, and cover letter
 
 After finishing a search cycle, the bot waits for your configured **search interval** (default: 30 minutes), then starts again.
 

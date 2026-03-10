@@ -15,7 +15,13 @@ Follow these in order:
 | [Setup & Installation](guides/setup.md) | Installing, first launch, setup wizard, logging into LinkedIn/Indeed |
 | [How the Bot Works](guides/how-the-bot-works.md) | Job searching, scoring, applying, scheduling, review mode, supported platforms (LinkedIn, Indeed, Greenhouse, Lever, Workday, Ashby) |
 | [Writing Experience Files](guides/experience-files.md) | How to write `.txt` files that produce great AI-tailored resumes |
-| [How AI Generation Works](guides/ai-generation.md) | What Claude Code does with your experience files and job descriptions |
+| [How AI Generation Works](guides/ai-generation.md) | How the AI generates tailored resumes and cover letters from your experience files |
+
+## Architecture
+
+| Document | What it covers |
+|----------|----------------|
+| [Application Flow](architecture/application-flow.md) | Flowcharts for the full pipeline — startup, scoring, generation, review, apply, error handling |
 
 ## Reference
 

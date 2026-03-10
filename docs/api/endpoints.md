@@ -27,7 +27,7 @@ AutoApply exposes a REST API at `http://localhost:5000`. All responses are JSON.
   "start_time": "2026-03-09T10:30:00+00:00",
   "uptime_seconds": 3600.5,
   "awaiting_review": false,
-  "claude_code_available": true,
+  "ai_available": true,
   "schedule_enabled": false
 }
 ```
@@ -93,6 +93,7 @@ When `enabled` is set to `true`, the scheduler starts a background thread that c
 | GET | `/api/applications/:id/cover_letter` | Get cover letter text and file path |
 | GET | `/api/applications/:id/events` | Get activity timeline events for this application |
 | GET | `/api/applications/:id/resume` | Download resume PDF |
+| GET | `/api/applications/:id/description` | View saved job description (HTML) |
 
 ### GET `/api/applications`
 
@@ -178,7 +179,7 @@ Returns 404 if the application does not exist.
 | POST | `/api/profile/experiences` | Create a new experience file |
 | PUT | `/api/profile/experiences/:filename` | Update file content |
 | DELETE | `/api/profile/experiences/:filename` | Delete a file |
-| GET | `/api/profile/status` | Get file count, total words, Claude availability |
+| GET | `/api/profile/status` | Get file count, total words, AI availability |
 
 ### POST `/api/profile/experiences`
 
@@ -299,7 +300,7 @@ Screening answers are used by the Workday and Ashby appliers to pre-fill common 
 ```json
 {
   "is_first_run": true,
-  "claude_code_available": true
+  "ai_available": true
 }
 ```
 
@@ -349,7 +350,37 @@ Event types: `FOUND`, `FILTERED`, `GENERATING`, `APPLYING`, `APPLIED`, `REVIEW`,
 | GET | `/api/health` | Readiness probe — returns `{"status": "ok"}` |
 | POST | `/api/shutdown` | Graceful shutdown (localhost only, returns 403 otherwise) |
 
-These endpoints are used by the Electron desktop shell to manage the Python backend lifecycle. They also work in browser mode.
+These endpoints are used by the Electron desktop shell to manage the Python backend lifecycle.
+
+## AI Provider
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/ai/validate` | Validate an API key against a provider |
+
+### POST `/api/ai/validate`
+
+**Request body**:
+```json
+{
+  "provider": "anthropic",
+  "api_key": "sk-ant-...",
+  "model": ""
+}
+```
+
+- `provider`: One of `"anthropic"`, `"openai"`, `"google"`, `"deepseek"`. Required.
+- `api_key`: The API key to validate. Required.
+- `model`: Optional model override. Leave empty to use the provider's default.
+
+**Response**:
+```json
+{
+  "valid": true
+}
+```
+
+Returns 400 if `provider` or `api_key` is missing, or if the provider is not supported.
 
 ## Error Responses
 

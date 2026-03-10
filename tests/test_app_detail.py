@@ -31,6 +31,7 @@ def insert_app(db: Database, **kwargs) -> int:
         cover_letter_text="Dear Hiring Manager...",
         status="applied",
         error_message=None,
+        description_path=None,
     )
     defaults.update(kwargs)
     return db.save_application(**defaults)
@@ -120,8 +121,8 @@ class TestGetApplicationDetail:
         expected_fields = [
             "id", "external_id", "platform", "job_title", "company",
             "location", "salary", "apply_url", "match_score", "resume_path",
-            "cover_letter_path", "cover_letter_text", "status",
-            "error_message", "applied_at", "updated_at", "notes",
+            "cover_letter_path", "cover_letter_text", "description_path",
+            "status", "error_message", "applied_at", "updated_at", "notes",
         ]
         for field in expected_fields:
             assert field in data, f"Missing field: {field}"
@@ -290,3 +291,203 @@ class TestGetFeedEventsForJob:
         # Both events returned; newest (higher ID) first when timestamps match
         assert len(events) == 2
         assert events[0].id > events[1].id
+
+
+# ===================================================================
+# FR-075 — Job Description Storage
+# ===================================================================
+
+
+class TestJobDescriptionEndpoint:
+    """FR-075: GET /api/applications/:id/description serves saved JD."""
+
+    def test_get_description_returns_html(self, app_client):
+        """Returns HTML file when description_path exists."""
+        client, db, tmp_path = app_client
+        desc_dir = tmp_path / "profile" / "job_descriptions"
+        desc_dir.mkdir(parents=True, exist_ok=True)
+        desc_file = desc_dir / "test_jd.html"
+        desc_file.write_text("<html><body>Job Description</body></html>", encoding="utf-8")
+
+        app_id = insert_app(db, description_path=str(desc_file))
+
+        res = client.get(f"/api/applications/{app_id}/description")
+        assert res.status_code == 200
+        assert b"Job Description" in res.data
+
+    def test_get_description_returns_404_when_no_path(self, app_client):
+        """Returns 404 when description_path is None."""
+        client, db, _ = app_client
+        app_id = insert_app(db, description_path=None)
+
+        res = client.get(f"/api/applications/{app_id}/description")
+        assert res.status_code == 404
+        assert "not found" in res.get_json()["error"].lower()
+
+    def test_get_description_returns_404_when_file_missing(self, app_client):
+        """Returns 404 when description_path points to non-existent file."""
+        client, db, _ = app_client
+        app_id = insert_app(db, description_path="/nonexistent/path.html")
+
+        res = client.get(f"/api/applications/{app_id}/description")
+        assert res.status_code == 404
+
+    def test_get_description_returns_404_for_unknown_app(self, app_client):
+        """Returns 404 for non-existent application ID."""
+        client, _, _ = app_client
+        res = client.get("/api/applications/9999/description")
+        assert res.status_code == 404
+
+
+class TestJobDescriptionStorage:
+    """FR-075: Job description saved as HTML during bot loop."""
+
+    def test_description_path_stored_in_db(self, tmp_path):
+        """description_path column is stored and retrieved."""
+        db = Database(tmp_path / "test.db")
+        app_id = db.save_application(
+            external_id="jd1", platform="linkedin", job_title="Dev",
+            company="Acme", location="NYC", salary="100k",
+            apply_url="https://example.com", match_score=80,
+            resume_path=None, cover_letter_path=None,
+            cover_letter_text=None, status="applied",
+            error_message=None, description_path="/path/to/desc.html",
+        )
+        app = db.get_application(app_id)
+        assert app.description_path == "/path/to/desc.html"
+
+    def test_description_path_defaults_to_none(self, tmp_path):
+        """description_path defaults to None when not provided."""
+        db = Database(tmp_path / "test.db")
+        app_id = db.save_application(
+            external_id="jd2", platform="indeed", job_title="Dev",
+            company="BigCo", location="SF", salary=None,
+            apply_url="https://example.com", match_score=70,
+            resume_path=None, cover_letter_path=None,
+            cover_letter_text=None, status="applied",
+            error_message=None,
+        )
+        app = db.get_application(app_id)
+        assert app.description_path is None
+
+    def test_migration_adds_column_to_existing_db(self, tmp_path):
+        """Migration adds description_path to a DB created without it."""
+        import sqlite3
+        db_path = tmp_path / "old.db"
+        # Create old schema without description_path
+        conn = sqlite3.connect(str(db_path))
+        conn.executescript("""
+            CREATE TABLE applications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                external_id TEXT NOT NULL,
+                platform TEXT NOT NULL,
+                job_title TEXT NOT NULL,
+                company TEXT NOT NULL,
+                location TEXT,
+                salary TEXT,
+                apply_url TEXT NOT NULL,
+                match_score INTEGER NOT NULL,
+                resume_path TEXT,
+                cover_letter_path TEXT,
+                cover_letter_text TEXT,
+                status TEXT NOT NULL DEFAULT 'applied',
+                error_message TEXT,
+                applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                notes TEXT
+            );
+            CREATE TABLE feed_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_type TEXT NOT NULL,
+                job_title TEXT,
+                company TEXT,
+                platform TEXT,
+                message TEXT,
+                created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+        """)
+        conn.close()
+
+        # Opening with Database class triggers migration
+        db = Database(db_path)
+        # Should be able to insert with description_path
+        app_id = db.save_application(
+            external_id="migrated", platform="linkedin", job_title="Test",
+            company="Co", location=None, salary=None,
+            apply_url="https://example.com", match_score=50,
+            resume_path=None, cover_letter_path=None,
+            cover_letter_text=None, status="applied",
+            error_message=None, description_path="/migrated/path.html",
+        )
+        app = db.get_application(app_id)
+        assert app.description_path == "/migrated/path.html"
+
+
+class TestSaveJobDescription:
+    """FR-075: _save_job_description helper creates well-formed HTML."""
+
+    def test_saves_html_file(self, tmp_path):
+        """Saves a valid HTML file with job details."""
+        from bot.bot import _save_job_description
+        from bot.search.base import RawJob
+        from core.filter import ScoredJob
+
+        raw = RawJob(
+            title="Software Engineer",
+            company="Acme Corp",
+            location="New York, NY",
+            salary="$120k",
+            description="We are looking for an engineer.\n\nRequirements:\n- Python\n- Flask",
+            apply_url="https://example.com/job/123",
+            platform="linkedin",
+            external_id="abcd1234efgh",
+            posted_at=None,
+        )
+        scored = ScoredJob(id="test-uuid", raw=raw, score=85, pass_filter=True, skip_reason="")
+
+        result = _save_job_description(scored, tmp_path)
+
+        assert result is not None
+        assert result.exists()
+        assert result.suffix == ".html"
+        content = result.read_text(encoding="utf-8")
+        assert "Software Engineer" in content
+        assert "Acme Corp" in content
+        assert "New York, NY" in content
+        assert "Python" in content
+        assert "Flask" in content
+        assert "<!DOCTYPE html>" in content
+
+    def test_returns_none_on_failure(self, tmp_path):
+        """Returns None when saving fails (e.g., read-only dir)."""
+        from bot.bot import _save_job_description
+        from unittest.mock import patch
+
+        with patch("bot.bot.Path.mkdir", side_effect=OSError("Permission denied")):
+            result = _save_job_description(None, tmp_path / "nonexistent")
+            assert result is None
+
+    def test_html_escapes_special_chars(self, tmp_path):
+        """HTML-escapes special characters in job data."""
+        from bot.bot import _save_job_description
+        from bot.search.base import RawJob
+        from core.filter import ScoredJob
+
+        raw = RawJob(
+            title='Engineer <script>alert("xss")</script>',
+            company="A&B Corp",
+            location="NYC",
+            salary=None,
+            description='Use <b>bold</b> & "quotes"',
+            apply_url="https://example.com",
+            platform="linkedin",
+            external_id="xss12345test",
+            posted_at=None,
+        )
+        scored = ScoredJob(id="test-uuid", raw=raw, score=80, pass_filter=True, skip_reason="")
+
+        result = _save_job_description(scored, tmp_path)
+        content = result.read_text(encoding="utf-8")
+        assert "<script>" not in content
+        assert "&lt;script&gt;" in content
+        assert "A&amp;B Corp" in content

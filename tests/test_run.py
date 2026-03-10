@@ -1,36 +1,16 @@
-"""Unit tests for run.py CLI argument parsing and port configuration.
+"""Unit tests for run.py port configuration.
 
 Requirement traceability:
-    FR-027  --no-browser flag
-    FR-028  AUTOAPPLY_PORT environment variable
+    FR-028  AUTOAPPLY_PORT environment variable and port auto-detection
 """
 
 from __future__ import annotations
 
 import os
-import argparse
-from unittest.mock import patch, MagicMock
+import socket
+from unittest.mock import patch
 
-
-class TestRunArgParsing:
-    """Validates FR-027: --no-browser flag."""
-
-    def test_no_browser_flag_parsed(self):
-        """AC-027-1: --no-browser flag is recognized by argparse."""
-        from run import main
-        # We can't easily call main() without starting the server,
-        # so test the argparse config directly
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--no-browser", action="store_true")
-        args = parser.parse_args(["--no-browser"])
-        assert args.no_browser is True
-
-    def test_default_no_flag(self):
-        """AC-027-2: Without --no-browser, flag is False."""
-        parser = argparse.ArgumentParser()
-        parser.add_argument("--no-browser", action="store_true")
-        args = parser.parse_args([])
-        assert args.no_browser is False
+from run import _find_free_port
 
 
 class TestPortConfig:
@@ -49,3 +29,37 @@ class TestPortConfig:
         with patch.dict(os.environ, env, clear=True):
             port = int(os.environ.get("AUTOAPPLY_PORT", "5000"))
             assert port == 5000
+
+
+class TestPortAutoDetection:
+    """Validates FR-028: Port auto-detection when default port is occupied."""
+
+    def test_find_free_port_returns_first_available(self):
+        """AC-028-3: Returns a port in the expected range."""
+        port = _find_free_port(9700, 9710)
+        assert 9700 <= port <= 9710
+
+    def test_find_free_port_skips_occupied(self):
+        """AC-028-4: Skips occupied ports and returns next available."""
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.bind(("127.0.0.1", 9700))
+            s.listen(1)
+            port = _find_free_port(9700, 9710)
+            assert port != 9700
+            assert 9701 <= port <= 9710
+
+    def test_find_free_port_raises_when_all_taken(self):
+        """AC-028-5: Raises RuntimeError when no ports available."""
+        socks = []
+        try:
+            for p in range(9700, 9703):
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.bind(("127.0.0.1", p))
+                s.listen(1)
+                socks.append(s)
+            import pytest
+            with pytest.raises(RuntimeError, match="All ports"):
+                _find_free_port(9700, 9702)
+        finally:
+            for s in socks:
+                s.close()

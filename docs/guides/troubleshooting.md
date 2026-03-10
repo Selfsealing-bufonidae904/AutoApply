@@ -1,37 +1,31 @@
 # Troubleshooting
 
-## "Claude Code not detected" warning
+## "AI Provider not configured" warning
 
-**What it means**: AutoApply can't find the `claude` command on your system.
+**What it means**: No AI API key is set up. AutoApply can't generate tailored resumes and cover letters without one.
 
 **How to fix**:
-1. Install Claude Code: [https://docs.anthropic.com/en/docs/claude-code](https://docs.anthropic.com/en/docs/claude-code)
-2. Authenticate by running `claude` once in your terminal
-3. Restart AutoApply
+1. Go to **Settings → AI Provider**
+2. Select a provider (Anthropic, OpenAI, Google, or DeepSeek)
+3. Enter your API key
+4. Click **Validate** to confirm it works
+5. Click **Save**
 
-**Still not working?** Make sure `claude --version` works in your terminal. On Windows, try `claude.cmd --version`.
+AutoApply works without an API key — it just uses generic templates instead of tailored documents.
 
-AutoApply works without Claude Code — it uses generic templates instead of tailored documents.
-
-## Desktop app won't start
+## App won't start
 
 **Check Python is running**:
 - Make sure you ran `python setup.py` with your virtual environment activated
 - Check `~/.autoapply/backend.log` for error messages
 
 **Port conflict**:
-- AutoApply tries ports 5000-5010. If all are taken, it fails
+- AutoApply auto-detects a free port in the range 5000-5010. If all are taken, it fails
 - Close other apps using those ports, or set `AUTOAPPLY_PORT=8080` as an environment variable
-
-## Browser mode shows blank page
-
-- Make sure your virtual environment is activated: `venv\Scripts\activate` (Windows) or `source venv/bin/activate` (macOS/Linux)
-- Try opening `http://localhost:5000` manually
-- Check the terminal for error messages
 
 ## "ModuleNotFoundError: No module named 'flask'"
 
-You're running Python outside the virtual environment.
+You're running Python outside the virtual environment. Re-run setup:
 
 ```bash
 # Windows:
@@ -39,7 +33,7 @@ venv\Scripts\activate
 # macOS/Linux:
 source venv/bin/activate
 
-python run.py
+python setup.py
 ```
 
 ## Login button does nothing / browser doesn't open
@@ -116,6 +110,7 @@ Everything is stored locally at `~/.autoapply/`:
 | `profile/experiences/` | Your experience `.txt` files |
 | `profile/resumes/` | Generated resumes (PDF + Markdown) |
 | `profile/cover_letters/` | Generated cover letters |
+| `profile/job_descriptions/` | Saved job postings (HTML) |
 | `browser_profile/` | Saved browser login sessions |
 | `backend.log` | Backend log (desktop app only) |
 

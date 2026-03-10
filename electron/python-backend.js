@@ -232,7 +232,7 @@ async function startBackend(options = {}) {
     ? path.join(process.resourcesPath, 'python-backend')
     : path.join(__dirname, '..');
 
-  backendProcess = spawn(pythonCmd, [scriptPath, '--no-browser'], {
+  backendProcess = spawn(pythonCmd, [scriptPath], {
     cwd,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],

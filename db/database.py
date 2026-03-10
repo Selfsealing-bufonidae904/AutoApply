@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS applications (
     resume_path TEXT,
     cover_letter_path TEXT,
     cover_letter_text TEXT,
+    description_path TEXT,
     status TEXT NOT NULL DEFAULT 'applied',
     error_message TEXT,
     applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -56,6 +57,16 @@ class Database:
     def init_schema(self) -> None:
         with self._connect() as conn:
             conn.executescript(SCHEMA_SQL)
+            self._migrate(conn)
+
+    @staticmethod
+    def _migrate(conn: sqlite3.Connection) -> None:
+        """Apply incremental schema migrations for existing databases."""
+        columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(applications)").fetchall()
+        }
+        if "description_path" not in columns:
+            conn.execute("ALTER TABLE applications ADD COLUMN description_path TEXT")
 
     def save_application(
         self,
@@ -72,6 +83,7 @@ class Database:
         cover_letter_text: str | None,
         status: str,
         error_message: str | None,
+        description_path: str | None = None,
     ) -> int:
         with self._connect() as conn:
             cursor = conn.execute(
@@ -79,13 +91,13 @@ class Database:
                 INSERT INTO applications (
                     external_id, platform, job_title, company, location, salary,
                     apply_url, match_score, resume_path, cover_letter_path,
-                    cover_letter_text, status, error_message
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    cover_letter_text, description_path, status, error_message
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     external_id, platform, job_title, company, location, salary,
                     apply_url, match_score, resume_path, cover_letter_path,
-                    cover_letter_text, status, error_message,
+                    cover_letter_text, description_path, status, error_message,
                 ),
             )
             return cursor.lastrowid  # type: ignore[return-value]

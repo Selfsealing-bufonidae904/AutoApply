@@ -14,7 +14,7 @@ AutoApply searches LinkedIn and Indeed, scores each job against your preferences
 
 - **Multi-platform search** — LinkedIn and Indeed, with configurable job titles, locations, and keywords
 - **Smart scoring** — Each job scored 0–100 based on title match, salary, location, experience level, and keyword relevance
-- **AI-powered documents** — Generates tailored resumes (PDF) and cover letters per job using [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
+- **AI-powered documents** — Generates tailored resumes (PDF) and cover letters per job using your choice of AI provider (Anthropic, OpenAI, Google, or DeepSeek)
 - **Automated applications** — Fills forms, uploads documents, and submits on LinkedIn Easy Apply, Indeed Quick Apply, Greenhouse, Lever, Workday, and Ashby
 - **Review mode** — Optionally review each application before it's submitted
 - **Dashboard** — Real-time live feed, application history, analytics, CSV export
@@ -25,7 +25,7 @@ AutoApply searches LinkedIn and Indeed, scores each job against your preferences
 
 ## Quick Start
 
-**Prerequisites**: Python 3.11+ and Google Chrome installed.
+**Prerequisites**: Python 3.11+, Node.js 18+, and Google Chrome installed.
 
 ```bash
 # 1. Clone and set up
@@ -39,21 +39,13 @@ python setup.py
 # 2. Install Playwright browser (for job searching/applying)
 playwright install chromium
 
-# 3. Run
-python run.py
-```
-
-The dashboard opens at `http://localhost:5000`. A setup wizard walks you through configuration on first launch.
-
-### Desktop App (Electron)
-
-For a native desktop experience with system tray support:
-
-```bash
+# 3. Launch the desktop app
 cd electron
 npm install
-npx electron .
+npm start
 ```
+
+A native app window opens with the dashboard. A setup wizard walks you through configuration on first launch.
 
 ## How It Works
 
@@ -74,7 +66,7 @@ npx electron .
 1. **Search** — Playwright-based scrapers find jobs on enabled platforms
 2. **Score** — Each job rated against your preferences (title, location, salary, keywords)
 3. **Filter** — Jobs below your minimum score or on the blacklist are skipped
-4. **Generate** — Claude Code creates a tailored resume and cover letter using your experience files
+4. **Generate** — AI creates a tailored resume and cover letter using your experience files
 5. **Apply** — Bot fills out application forms, uploads documents, and submits
 6. **Track** — Every application saved to SQLite with status, score, and generated documents
 
@@ -102,7 +94,7 @@ AutoApply/
 ├── config/settings.py      # Pydantic config models
 ├── db/database.py          # SQLite database layer
 ├── core/
-│   ├── ai_engine.py        # Claude Code integration for document generation
+│   ├── ai_engine.py        # Multi-provider LLM API for document generation
 │   ├── filter.py           # Job scoring and ATS detection
 │   ├── resume_renderer.py  # PDF resume generation (ReportLab)
 │   └── scheduler.py        # Time-based bot scheduling
@@ -127,6 +119,7 @@ AutoApply/
 | [How the Bot Works](docs/guides/how-the-bot-works.md) | Full pipeline — searching, scoring, applying |
 | [Writing Experience Files](docs/guides/experience-files.md) | Describe your background for better AI-generated resumes |
 | [How AI Generation Works](docs/guides/ai-generation.md) | What happens when AutoApply creates your documents |
+| [Application Flow](docs/architecture/application-flow.md) | Flowcharts for the full bot pipeline |
 | [Configuration](docs/guides/configuration.md) | All settings explained |
 | [Troubleshooting](docs/guides/troubleshooting.md) | Common problems and fixes |
 | [API Reference](docs/api/endpoints.md) | REST API for developers |
@@ -143,7 +136,8 @@ Everything stays on your machine at `~/.autoapply/`:
 ├── profile/
 │   ├── experiences/         # Your background (.txt files fed to AI)
 │   ├── resumes/             # Generated resumes (PDF)
-│   └── cover_letters/       # Generated cover letters
+│   ├── cover_letters/       # Generated cover letters
+│   └── job_descriptions/    # Saved job postings (HTML)
 ├── browser_profile/         # Chrome login sessions (persisted)
 └── backend.log              # Server logs
 ```
@@ -163,7 +157,7 @@ python -m pytest tests/ -v
 | Backend | Python, Flask, Flask-SocketIO, gevent |
 | Database | SQLite (stdlib `sqlite3`) |
 | Browser automation | Playwright (persistent context, system Chrome) |
-| AI | Claude Code CLI (subprocess) |
+| AI | Multi-provider LLM API (Anthropic, OpenAI, Google, DeepSeek) |
 | PDF generation | ReportLab |
 | Config | Pydantic v2 |
 | Desktop | Electron |

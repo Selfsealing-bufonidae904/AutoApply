@@ -39,6 +39,7 @@ def create_directories() -> None:
         data_dir / "profile" / "jobs",
         data_dir / "profile" / "resumes",
         data_dir / "profile" / "cover_letters",
+        data_dir / "profile" / "job_descriptions",
         data_dir / "browser_profile",
         data_dir / "backups",
     ]
@@ -56,7 +57,7 @@ def write_readme() -> None:
             "HOW TO USE THIS FOLDER\n"
             "=====================\n\n"
             "Add .txt files describing your work experience, skills, and achievements.\n"
-            "Write in plain language — Claude Code will read these to generate tailored\n"
+            "Write in plain language — the AI will read these to generate tailored\n"
             "resumes and cover letters for each job application.\n\n"
             "Tips:\n"
             "- One file per job/role works well, but any organization is fine\n"

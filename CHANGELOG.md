@@ -6,6 +6,21 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Multi-provider LLM API**: Replaced Claude Code CLI integration with direct HTTP API calls to Anthropic, OpenAI, Google Gemini, and DeepSeek. Configure your preferred provider and API key in Settings → AI Provider. (FR-031 through FR-036)
+- **Electron-only distribution**: Removed browser mode (`--no-browser` flag, auto-browser-open). AutoApply now launches exclusively as an Electron desktop app.
+- **AI status field**: `claude_code_available` renamed to `ai_available` across all API responses.
+- **Privacy model**: AI document generation now sends prompts to your configured cloud LLM provider. No data is sent if no API key is configured.
+
+### Added
+- **Job description storage**: Every job that passes the filter has its full description saved as a styled HTML file in `~/.autoapply/profile/job_descriptions/`. Accessible via "View Job Description" button in the application detail modal, and via `GET /api/applications/:id/description`. Useful for interview prep after applying. (FR-075)
+- **AI Provider settings**: New Settings section to select LLM provider (Anthropic, OpenAI, Google, DeepSeek), enter API key, and optionally override the default model.
+- **API key validation endpoint** (`POST /api/ai/validate`): Test your API key before saving.
+- **Default models per provider**: Anthropic → `claude-sonnet-4-20250514`, OpenAI → `gpt-4o`, Google → `gemini-2.0-flash`, DeepSeek → `deepseek-chat`.
+
+### Fixed
+- **Port conflict crash**: `run.py` now auto-detects a free port (5000-5010) instead of crashing with `WinError 10048` when port 5000 is already in use.
+
 ## [1.8.0] - 2026-03-10
 
 Workday & Ashby ATS Support + Application Answers UI.
@@ -38,10 +53,10 @@ Workday & Ashby ATS Support + Application Answers UI.
 
 ## [1.7.1] - 2026-03-10
 
-Bugfixes for platform login and Claude Code detection.
+Bugfixes for platform login and Claude Code detection. *(Note: Claude Code CLI was replaced by multi-provider LLM API in a later release.)*
 
 ### Fixed
-- **Claude Code detection on Windows**: `check_claude_code_available()` now returns full path from `shutil.which()` instead of bare command name. Windows subprocess requires the full `.CMD` path to execute correctly.
+- **Claude Code detection on Windows**: `check_claude_code_available()` now returns full path from `shutil.which()` instead of bare command name. *(Superseded: Claude Code CLI replaced by LLM API in [Unreleased].)*
 - **Platform login browser**: Wizard login buttons (LinkedIn, Indeed) now functional — calls new backend endpoints to open a headed Playwright browser for login. Previously showed placeholder alerts.
 
 ### Added

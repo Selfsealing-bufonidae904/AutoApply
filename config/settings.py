@@ -83,6 +83,12 @@ class ScheduleConfig(BaseModel):
     end_time: str = "17:00"    # HH:MM in 24-hour local time
 
 
+class LLMConfig(BaseModel):
+    provider: str = ""  # "anthropic" | "openai" | "google" | "deepseek"
+    api_key: str = ""
+    model: str = ""  # Empty = use default for provider
+
+
 class BotConfig(BaseModel):
     enabled_platforms: list[str] = ["linkedin", "indeed"]
     min_match_score: int = 75
@@ -99,6 +105,7 @@ class AppConfig(BaseModel):
     profile: UserProfile
     search_criteria: SearchCriteria
     bot: BotConfig = BotConfig()
+    llm: LLMConfig = LLMConfig()
     company_blacklist: list[str] = []
     version: str = "2.0"
 
