@@ -168,6 +168,15 @@ python -m pytest tests/ -v
 | Frontend | Vanilla JS SPA (single `index.html`) |
 | Tests | pytest |
 
+## Disclaimer
+
+> **This software is provided for educational and personal-use purposes only.**
+>
+> - AutoApply automates interactions with third-party platforms (LinkedIn, Indeed, Greenhouse, Lever). **Using automated tools may violate the Terms of Service of these platforms.** You are solely responsible for ensuring your use complies with all applicable terms, policies, and laws.
+> - The authors and contributors are **not responsible** for any consequences arising from the use of this software, including but not limited to: account suspension or termination, legal action from platform providers, rejected or misattributed job applications, or any other damages.
+> - This software is provided **"as is"** without warranty of any kind. Use it **at your own risk**.
+> - The authors do not endorse or encourage violation of any platform's Terms of Service.
+
 ## Contributing
 
 1. Fork the repo
