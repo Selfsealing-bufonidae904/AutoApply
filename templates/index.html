@@ -1,0 +1,2871 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoApply — Smart Job Application Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   ROOT & RESET
+   ═══════════════════════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:        #1a1a2e;
+  --panel:     #16213e;
+  --panel-alt: #1a2744;
+  --accent:    #0f3460;
+  --accent-lt: #1a4a80;
+  --danger:    #e94560;
+  --success:   #53d769;
+  --warning:   #ffc107;
+  --info:      #4da6ff;
+  --text:      #e0e0e0;
+  --text-dim:  #8892a4;
+  --text-bright:#ffffff;
+  --border:    #2a3a5c;
+  --radius:    10px;
+  --radius-sm: 6px;
+  --shadow:    0 4px 20px rgba(0,0,0,.35);
+  --transition: .25s ease;
+}
+
+html { font-size: 15px; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.55;
+}
+
+a { color: var(--info); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+button, input, select, textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   UTILITY CLASSES
+   ═══════════════════════════════════════════════════════════════ */
+.hidden     { display: none !important; }
+.flex       { display: flex; }
+.flex-col   { flex-direction: column; }
+.items-center { align-items: center; }
+.justify-between { justify-content: space-between; }
+.gap-sm     { gap: 8px; }
+.gap-md     { gap: 16px; }
+.gap-lg     { gap: 24px; }
+.flex-1     { flex: 1; }
+.text-center{ text-align: center; }
+.text-dim   { color: var(--text-dim); }
+.mt-auto    { margin-top: auto; }
+
+/* ═══════════════════════════════════════════════════════════════
+   BUTTONS
+   ═══════════════════════════════════════════════════════════════ */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 22px;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition), transform .1s;
+  white-space: nowrap;
+}
+.btn:active { transform: scale(.97); }
+.btn-primary   { background: var(--accent); color: #fff; }
+.btn-primary:hover { background: var(--accent-lt); }
+.btn-success   { background: var(--success); color: #111; }
+.btn-success:hover { background: #45c45a; }
+.btn-danger    { background: var(--danger); color: #fff; }
+.btn-danger:hover  { background: #d13a52; }
+.btn-warning   { background: var(--warning); color: #111; }
+.btn-warning:hover { background: #e5ad06; }
+.btn-ghost     { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
+.btn-ghost:hover   { color: var(--text); border-color: var(--text-dim); }
+.btn-sm { padding: 6px 14px; font-size: .85rem; }
+.btn-lg { padding: 14px 36px; font-size: 1.1rem; }
+
+/* ═══════════════════════════════════════════════════════════════
+   FORM CONTROLS
+   ═══════════════════════════════════════════════════════════════ */
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.form-group label { font-weight: 600; font-size: .9rem; color: var(--text-dim); }
+.form-control {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 14px;
+  color: var(--text);
+  transition: border-color var(--transition);
+}
+.form-control:focus { outline: none; border-color: var(--info); }
+textarea.form-control { resize: vertical; min-height: 90px; }
+select.form-control { cursor: pointer; }
+
+.toggle-switch {
+  position: relative;
+  width: 48px; height: 26px;
+  display: inline-block;
+}
+.toggle-switch input { opacity: 0; width: 0; height: 0; }
+.toggle-switch .slider {
+  position: absolute; inset: 0;
+  background: var(--border);
+  border-radius: 26px;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.toggle-switch .slider::before {
+  content: '';
+  position: absolute;
+  width: 20px; height: 20px;
+  left: 3px; bottom: 3px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform var(--transition);
+}
+.toggle-switch input:checked + .slider { background: var(--success); }
+.toggle-switch input:checked + .slider::before { transform: translateX(22px); }
+
+/* ═══════════════════════════════════════════════════════════════
+   TAG INPUT
+   ═══════════════════════════════════════════════════════════════ */
+.tag-input-container { position: relative; }
+.tag-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: stretch;
+}
+.tag-input-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  min-height: 42px;
+  cursor: text;
+  transition: border-color var(--transition);
+  flex: 1;
+}
+.tag-input-wrap:focus-within { border-color: var(--info); }
+.tag-input-wrap input {
+  flex: 1;
+  min-width: 120px;
+  border: none;
+  background: transparent;
+  outline: none;
+  color: var(--text);
+  padding: 2px 4px;
+}
+.tag-add-btn {
+  padding: 0 14px;
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent-lt);
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--transition);
+  font-size: .85rem;
+}
+.tag-add-btn:hover { background: var(--accent-lt); }
+.tag-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.tag-suggestion {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  background: transparent;
+  border: 1px dashed var(--border);
+  border-radius: 20px;
+  color: var(--text-dim);
+  font-size: .8rem;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.tag-suggestion:hover {
+  border-color: var(--info);
+  color: var(--info);
+  background: rgba(77,166,255,.08);
+}
+.tag-suggestion::before { content: '+ '; opacity: .6; }
+.form-hint {
+  font-size: .78rem;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--accent);
+  color: var(--text-bright);
+  padding: 3px 10px;
+  border-radius: 20px;
+  font-size: .82rem;
+  font-weight: 500;
+  animation: tagIn .2s;
+}
+@keyframes tagIn { from { transform: scale(.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.tag .tag-remove {
+  cursor: pointer;
+  font-size: .9rem;
+  margin-left: 2px;
+  opacity: .7;
+  transition: opacity .15s;
+}
+.tag .tag-remove:hover { opacity: 1; }
+
+/* ═══════════════════════════════════════════════════════════════
+   CARDS & PANELS
+   ═══════════════════════════════════════════════════════════════ */
+.card {
+  background: var(--panel);
+  border-radius: var(--radius);
+  padding: 24px;
+  box-shadow: var(--shadow);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   STATUS DOTS
+   ═══════════════════════════════════════════════════════════════ */
+.dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.dot-green  { background: var(--success); box-shadow: 0 0 6px var(--success); }
+.dot-yellow { background: var(--warning); box-shadow: 0 0 6px var(--warning); }
+.dot-red    { background: var(--danger);  box-shadow: 0 0 6px var(--danger);  }
+.dot-gray   { background: var(--text-dim); }
+.dot-pulse  { animation: pulse 1.5s infinite; }
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .4; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   NAVBAR
+   ═══════════════════════════════════════════════════════════════ */
+#navbar {
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  padding: 0 28px;
+  display: flex;
+  align-items: center;
+  height: 58px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+#navbar .logo {
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: var(--text-bright);
+  margin-right: 40px;
+  letter-spacing: -.5px;
+}
+#navbar .logo span { color: var(--info); }
+#navbar .nav-tabs {
+  display: flex;
+  gap: 4px;
+  list-style: none;
+  height: 100%;
+}
+#navbar .nav-tabs li {
+  display: flex;
+  align-items: center;
+}
+#navbar .nav-tabs li a {
+  padding: 0 18px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  color: var(--text-dim);
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  transition: color var(--transition), border-color var(--transition);
+  text-decoration: none;
+  cursor: pointer;
+}
+#navbar .nav-tabs li a:hover,
+#navbar .nav-tabs li a.active {
+  color: var(--text-bright);
+  border-bottom-color: var(--info);
+}
+#navbar .nav-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: .85rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MAIN CONTENT WRAPPER
+   ═══════════════════════════════════════════════════════════════ */
+.main-content {
+  max-width: 1360px;
+  margin: 0 auto;
+  padding: 28px;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   WIZARD
+   ═══════════════════════════════════════════════════════════════ */
+#wizard-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  padding: 20px;
+}
+#wizard-box {
+  background: var(--panel);
+  border-radius: 16px;
+  padding: 44px;
+  width: 100%;
+  max-width: 620px;
+  box-shadow: 0 8px 40px rgba(0,0,0,.5);
+  position: relative;
+}
+#wizard-box h2 {
+  font-size: 1.6rem;
+  margin-bottom: 8px;
+  color: var(--text-bright);
+}
+#wizard-box p.subtitle {
+  color: var(--text-dim);
+  margin-bottom: 24px;
+  line-height: 1.6;
+}
+.wizard-progress {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 32px;
+}
+.wizard-progress .step-dot {
+  flex: 1;
+  height: 4px;
+  border-radius: 4px;
+  background: var(--border);
+  transition: background var(--transition);
+}
+.wizard-progress .step-dot.active { background: var(--info); }
+.wizard-progress .step-dot.done   { background: var(--success); }
+.wizard-nav {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 32px;
+}
+.wizard-step { display: none; }
+.wizard-step.active { display: block; }
+
+.checkboxes-group { display: flex; flex-wrap: wrap; gap: 12px; }
+.checkboxes-group label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 8px 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--transition), background var(--transition);
+}
+.checkboxes-group label:hover { border-color: var(--info); }
+.checkboxes-group input:checked + span { color: var(--info); font-weight: 600; }
+.checkboxes-group input { accent-color: var(--info); }
+
+.file-upload-zone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 36px;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color var(--transition), background var(--transition);
+}
+.file-upload-zone:hover { border-color: var(--info); background: rgba(77,166,255,.05); }
+.file-upload-zone.has-file { border-color: var(--success); border-style: solid; }
+.file-upload-zone input[type="file"] { display: none; }
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 20px;
+  font-size: .82rem;
+  font-weight: 600;
+}
+.status-badge.ok   { background: rgba(83,215,105,.15); color: var(--success); }
+.status-badge.warn { background: rgba(255,193,7,.15);  color: var(--warning); }
+.status-badge.err  { background: rgba(233,69,96,.15);  color: var(--danger);  }
+
+/* ═══════════════════════════════════════════════════════════════
+   DASHBOARD — BOT CONTROL
+   ═══════════════════════════════════════════════════════════════ */
+.bot-control {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 24px;
+  align-items: center;
+}
+.bot-buttons { display: flex; gap: 10px; }
+.bot-stats {
+  display: flex;
+  gap: 28px;
+  justify-content: center;
+}
+.bot-stat { text-align: center; }
+.bot-stat .num {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--text-bright);
+  line-height: 1;
+}
+.bot-stat .label {
+  font-size: .75rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin-top: 4px;
+}
+.bot-status-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   DASHBOARD — LIVE FEED
+   ═══════════════════════════════════════════════════════════════ */
+.feed-list {
+  max-height: 420px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.feed-list::-webkit-scrollbar { width: 6px; }
+.feed-list::-webkit-scrollbar-track { background: transparent; }
+.feed-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 6px; }
+
+.feed-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  background: var(--bg);
+  border-radius: var(--radius-sm);
+  font-size: .88rem;
+  animation: feedIn .3s;
+}
+@keyframes feedIn { from { opacity: 0; transform: translateY(-6px); } }
+.feed-time {
+  color: var(--text-dim);
+  font-size: .78rem;
+  white-space: nowrap;
+  min-width: 62px;
+}
+.feed-badge {
+  padding: 2px 10px;
+  border-radius: 12px;
+  font-size: .72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  min-width: 80px;
+  text-align: center;
+}
+.feed-badge.FOUND     { background: rgba(77,166,255,.18); color: var(--info); }
+.feed-badge.FILTERED  { background: rgba(136,146,164,.18); color: var(--text-dim); }
+.feed-badge.GENERATING{ background: rgba(255,193,7,.18);  color: var(--warning); }
+.feed-badge.APPLYING  { background: rgba(77,166,255,.18); color: var(--info); }
+.feed-badge.APPLIED   { background: rgba(83,215,105,.18); color: var(--success); }
+.feed-badge.CAPTCHA   { background: rgba(233,69,96,.18);  color: var(--danger); }
+.feed-badge.ERROR     { background: rgba(233,69,96,.18);  color: var(--danger); }
+.feed-detail { flex: 1; }
+.feed-detail strong { color: var(--text-bright); }
+.feed-msg {
+  color: var(--text-dim);
+  font-size: .82rem;
+  display: block;
+  margin-top: 2px;
+}
+.feed-resume {
+  font-size: .78rem;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   APPLICATIONS TABLE
+   ═══════════════════════════════════════════════════════════════ */
+.filter-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.filter-bar .form-control { min-width: 140px; }
+.filter-bar input[type="text"] { flex: 1; min-width: 200px; }
+
+.data-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: .88rem;
+}
+.data-table thead th {
+  text-align: left;
+  padding: 12px 14px;
+  color: var(--text-dim);
+  font-size: .78rem;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+}
+.data-table tbody td {
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(42,58,92,.5);
+  vertical-align: middle;
+}
+.data-table tbody tr:hover { background: rgba(15,52,96,.25); }
+.data-table .match-pct {
+  font-weight: 700;
+  min-width: 50px;
+  display: inline-block;
+  text-align: center;
+}
+.data-table select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  padding: 4px 8px;
+  font-size: .82rem;
+}
+.data-table .notes-input {
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid transparent;
+  color: var(--text);
+  width: 100%;
+  padding: 2px 0;
+  transition: border-color var(--transition);
+}
+.data-table .notes-input:focus {
+  outline: none;
+  border-bottom-color: var(--info);
+}
+.pagination {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin-top: 20px;
+}
+.pagination button {
+  width: 36px; height: 36px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+.pagination button:hover { background: var(--accent); }
+.pagination button.active { background: var(--info); color: #fff; border-color: var(--info); }
+.pagination button:disabled { opacity: .35; cursor: default; }
+
+/* ═══════════════════════════════════════════════════════════════
+   MODAL
+   ═══════════════════════════════════════════════════════════════ */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.65);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  animation: fadeIn .2s;
+}
+@keyframes fadeIn { from { opacity: 0; } }
+.modal-box {
+  background: var(--panel);
+  border-radius: 14px;
+  padding: 32px;
+  width: 100%;
+  max-width: 640px;
+  max-height: 80vh;
+  overflow-y: auto;
+  box-shadow: 0 12px 50px rgba(0,0,0,.5);
+  animation: modalIn .25s;
+}
+@keyframes modalIn { from { transform: translateY(20px); opacity: 0; } }
+.modal-box h3 { margin-bottom: 16px; color: var(--text-bright); }
+.modal-box .modal-close {
+  float: right;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 1.3rem;
+  cursor: pointer;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   APPLICATION DETAIL
+   ═══════════════════════════════════════════════════════════════ */
+.app-detail-header { margin-bottom: 18px; }
+.app-detail-header h3 { margin: 0 0 4px 0; color: var(--text-bright); font-size: 1.15rem; }
+.app-detail-header .company-line { color: var(--text-dim); font-size: .95rem; }
+.app-detail-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 24px;
+  margin-bottom: 18px;
+}
+.app-detail-grid .detail-label { color: var(--text-dim); font-size: .8rem; text-transform: uppercase; letter-spacing: .5px; }
+.app-detail-grid .detail-value { color: var(--text); font-size: .95rem; margin-bottom: 6px; }
+.app-detail-section { margin-bottom: 16px; }
+.app-detail-section h4 { color: var(--text-bright); font-size: .9rem; margin-bottom: 8px; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+.app-timeline { list-style: none; padding: 0; margin: 0; }
+.app-timeline li {
+  padding: 6px 0 6px 20px;
+  position: relative;
+  font-size: .88rem;
+  color: var(--text);
+  border-left: 2px solid var(--border);
+}
+.app-timeline li::before {
+  content: '';
+  position: absolute;
+  left: -5px;
+  top: 12px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.app-timeline .timeline-time { color: var(--text-dim); font-size: .78rem; }
+.app-detail-actions { display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+.app-detail-notes { width: 100%; min-height: 60px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); padding: 10px; font-family: inherit; font-size: .9rem; resize: vertical; }
+tr.clickable-row { cursor: pointer; }
+tr.clickable-row:hover td { background: rgba(255,255,255,.03); }
+
+/* ═══════════════════════════════════════════════════════════════
+   PROFILE — FILE CARDS
+   ═══════════════════════════════════════════════════════════════ */
+.file-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 16px;
+}
+.file-card {
+  background: var(--bg);
+  border-radius: var(--radius);
+  padding: 20px;
+  border: 1px solid var(--border);
+  transition: border-color var(--transition);
+}
+.file-card:hover { border-color: var(--accent-lt); }
+.file-card h4 {
+  font-size: .95rem;
+  color: var(--text-bright);
+  margin-bottom: 8px;
+  word-break: break-all;
+}
+.file-card .meta {
+  font-size: .78rem;
+  color: var(--text-dim);
+  margin-bottom: 10px;
+  display: flex;
+  gap: 16px;
+}
+.file-card .preview {
+  font-size: .82rem;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin-bottom: 14px;
+  font-style: italic;
+}
+.file-card .actions { display: flex; gap: 8px; }
+
+/* ═══════════════════════════════════════════════════════════════
+   REVIEW CARD
+   ═══════════════════════════════════════════════════════════════ */
+.feed-badge.REVIEW  { background: rgba(147,112,219,.18); color: #9370DB; }
+.feed-badge.SKIPPED { background: rgba(136,146,164,.18); color: var(--text-dim); }
+
+.review-card {
+  background: var(--panel);
+  border: 1px solid #7B68EE;
+  border-radius: var(--radius);
+  padding: 24px;
+  margin-bottom: 20px;
+  animation: modalIn .25s;
+}
+.review-card h3 { color: var(--text-bright); margin-bottom: 4px; }
+.review-card .review-meta { color: var(--text-dim); font-size: .85rem; margin-bottom: 16px; }
+.review-card .review-section { margin-bottom: 16px; }
+.review-card .review-section h4 {
+  color: var(--text-dim);
+  font-size: .82rem;
+  text-transform: uppercase;
+  letter-spacing: .5px;
+  margin-bottom: 8px;
+}
+.review-card textarea {
+  width: 100%;
+  min-height: 140px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px;
+  font-size: .88rem;
+  line-height: 1.6;
+  resize: vertical;
+}
+.review-card .review-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MODE SELECTOR (bot control bar)
+   ═══════════════════════════════════════════════════════════════ */
+.mode-selector {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mode-selector label {
+  font-size: .82rem;
+  color: var(--text-dim);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mode-selector select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px 10px;
+  font-size: .85rem;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ANALYTICS CHARTS
+   ═══════════════════════════════════════════════════════════════ */
+.chart-container {
+  position: relative;
+  height: 220px;
+}
+.analytics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+@media (max-width: 768px) {
+  .analytics-grid { grid-template-columns: 1fr; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SETTINGS
+   ═══════════════════════════════════════════════════════════════ */
+.settings-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+@media (max-width: 768px) {
+  .settings-grid { grid-template-columns: 1fr; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════════════════════════════════════ */
+@media (max-width: 900px) {
+  .bot-control { grid-template-columns: 1fr; }
+  .bot-stats { flex-wrap: wrap; }
+  #wizard-box { padding: 28px; }
+  .main-content { padding: 16px; }
+  .file-grid { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════════════════════════
+     SETUP WIZARD OVERLAY
+     ════════════════════════════════════════════════════════════════ -->
+<div id="wizard-overlay" class="hidden">
+  <div id="wizard-box">
+    <div class="wizard-progress" id="wizard-progress"></div>
+
+    <!-- Step 1: Welcome -->
+    <div class="wizard-step" data-step="0">
+      <h2>Welcome to AutoApply</h2>
+      <p class="subtitle">
+        AutoApply automates your job search by scanning platforms, matching opportunities to your profile,
+        generating tailored resumes and cover letters, and applying on your behalf. Let's get you set up
+        in a few quick steps.
+      </p>
+      <div style="margin-bottom:20px">
+        <span class="status-badge" id="wizard-claude-status">
+          Checking Claude Code...
+        </span>
+      </div>
+      <div class="wizard-nav">
+        <button class="btn btn-ghost" onclick="setWizardStep(5)">Skip to Platform Login</button>
+        <button class="btn btn-primary btn-lg" onclick="wizardNext()">Get Started</button>
+      </div>
+    </div>
+
+    <!-- Step 2: Experience Folder -->
+    <div class="wizard-step" data-step="1">
+      <h2>Experience Folder</h2>
+      <p class="subtitle">
+        AutoApply reads your professional experiences from text files. Place your work history, projects,
+        certifications, and skills into separate files in the experiences folder. Claude uses these to
+        craft perfectly tailored resumes.
+      </p>
+      <div class="card" style="margin-bottom:16px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+        <code style="font-size:.9rem; color:var(--info); word-break:break-all;">~/.autoapply/profile/experiences/</code>
+        <button class="btn btn-ghost btn-sm" onclick="alert('Open this path in your file explorer:\n\n~/.autoapply/profile/experiences/')">Open Folder</button>
+      </div>
+      <div style="margin-bottom:8px">
+        Files detected: <strong id="wizard-file-count">0</strong>
+        <button class="btn btn-ghost btn-sm" onclick="wizardRefreshFiles()" style="margin-left:8px">Refresh</button>
+      </div>
+      <div class="wizard-nav">
+        <button class="btn btn-ghost" onclick="wizardPrev()">Back</button>
+        <button class="btn btn-primary" onclick="wizardNext()">Next</button>
+      </div>
+    </div>
+
+    <!-- Step 3: Profile -->
+    <div class="wizard-step" data-step="2">
+      <h2>Your Profile</h2>
+      <p class="subtitle">Basic information used across your applications.</p>
+      <div class="flex-col gap-md">
+        <div class="settings-grid">
+          <div class="form-group">
+            <label>First Name *</label>
+            <input type="text" class="form-control" id="wiz-first-name" placeholder="Jane">
+          </div>
+          <div class="form-group">
+            <label>Last Name *</label>
+            <input type="text" class="form-control" id="wiz-last-name" placeholder="Doe">
+          </div>
+          <div class="form-group">
+            <label>Email *</label>
+            <input type="email" class="form-control" id="wiz-email" placeholder="jane@example.com">
+          </div>
+          <div class="form-group">
+            <label>Phone</label>
+            <div style="display:flex; gap:8px;">
+              <input type="text" class="form-control" id="wiz-phone-code" placeholder="+1" style="width:70px; flex-shrink:0;">
+              <input type="tel" class="form-control" id="wiz-phone" placeholder="555-0123" style="flex:1;">
+            </div>
+          </div>
+        </div>
+        <div class="settings-grid">
+          <div class="form-group">
+            <label>Address Line 1</label>
+            <input type="text" class="form-control" id="wiz-address1" placeholder="123 Main St">
+          </div>
+          <div class="form-group">
+            <label>Address Line 2</label>
+            <input type="text" class="form-control" id="wiz-address2" placeholder="Apt 4B">
+          </div>
+          <div class="form-group">
+            <label>City *</label>
+            <input type="text" class="form-control" id="wiz-city" placeholder="San Francisco">
+          </div>
+          <div class="form-group">
+            <label>State *</label>
+            <input type="text" class="form-control" id="wiz-state" placeholder="CA">
+          </div>
+          <div class="form-group">
+            <label>ZIP Code</label>
+            <input type="text" class="form-control" id="wiz-zip" placeholder="94105">
+          </div>
+          <div class="form-group">
+            <label>Country</label>
+            <input type="text" class="form-control" id="wiz-country" placeholder="United States" value="United States">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Bio / Summary</label>
+          <textarea class="form-control" id="wiz-bio" rows="3" placeholder="Brief professional summary..."></textarea>
+        </div>
+        <div class="settings-grid">
+          <div class="form-group">
+            <label>LinkedIn URL (optional)</label>
+            <input type="url" class="form-control" id="wiz-linkedin" placeholder="https://linkedin.com/in/...">
+          </div>
+          <div class="form-group">
+            <label>Portfolio URL (optional)</label>
+            <input type="url" class="form-control" id="wiz-portfolio" placeholder="https://...">
+          </div>
+        </div>
+      </div>
+      <div class="wizard-nav">
+        <button class="btn btn-ghost" onclick="wizardPrev()">Back</button>
+        <button class="btn btn-primary" onclick="wizardNext()">Next</button>
+      </div>
+    </div>
+
+    <!-- Step 4: Job Preferences -->
+    <div class="wizard-step" data-step="3">
+      <h2>Job Preferences</h2>
+      <p class="subtitle">Tell us what you're looking for.</p>
+      <div class="flex-col gap-md">
+        <div class="form-group">
+          <label>Job Titles</label>
+          <div class="tag-input-container">
+            <div class="tag-input-row">
+              <div class="tag-input-wrap" id="wiz-titles-tags" data-field="titles" data-placeholder="e.g. Software Engineer"></div>
+              <button type="button" class="tag-add-btn" onclick="addTagFromInput('wiz-titles-tags')">Add</button>
+            </div>
+            <div class="tag-suggestions" data-for="wiz-titles-tags">
+              <span class="tag-suggestion" onclick="addTag('wiz-titles-tags','Software Engineer')">Software Engineer</span>
+              <span class="tag-suggestion" onclick="addTag('wiz-titles-tags','Product Manager')">Product Manager</span>
+              <span class="tag-suggestion" onclick="addTag('wiz-titles-tags','Data Scientist')">Data Scientist</span>
+              <span class="tag-suggestion" onclick="addTag('wiz-titles-tags','Program Manager')">Program Manager</span>
+              <span class="tag-suggestion" onclick="addTag('wiz-titles-tags','UX Designer')">UX Designer</span>
+              <span class="tag-suggestion" onclick="addTag('wiz-titles-tags','DevOps Engineer')">DevOps Engineer</span>
+            </div>
+            <div class="form-hint">Add each title you'd like to search for. The bot searches all of them.</div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Preferred Locations</label>
+          <div class="tag-input-container">
+            <div class="tag-input-row">
+              <div class="tag-input-wrap" id="wiz-locations-tags" data-field="locations" data-placeholder="e.g. New York, NY"></div>
+              <button type="button" class="tag-add-btn" onclick="addTagFromInput('wiz-locations-tags')">Add</button>
+            </div>
+            <div class="tag-suggestions" data-for="wiz-locations-tags">
+              <span class="tag-suggestion" onclick="addTag('wiz-locations-tags','Remote')">Remote</span>
+              <span class="tag-suggestion" onclick="addTag('wiz-locations-tags','United States')">United States</span>
+              <span class="tag-suggestion" onclick="addTag('wiz-locations-tags','New York, NY')">New York, NY</span>
+              <span class="tag-suggestion" onclick="addTag('wiz-locations-tags','San Francisco, CA')">San Francisco, CA</span>
+              <span class="tag-suggestion" onclick="addTag('wiz-locations-tags','Austin, TX')">Austin, TX</span>
+              <span class="tag-suggestion" onclick="addTag('wiz-locations-tags','Seattle, WA')">Seattle, WA</span>
+            </div>
+            <div class="form-hint">Add cities or "Remote". The bot searches all locations.</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-md">
+          <label style="font-weight:600; font-size:.9rem; color:var(--text-dim);">Remote Only</label>
+          <label class="toggle-switch">
+            <input type="checkbox" id="wiz-remote">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="form-group">
+          <label>Minimum Salary (optional)</label>
+          <input type="number" class="form-control" id="wiz-salary" placeholder="e.g. 100000" style="max-width:220px">
+        </div>
+        <div class="form-group">
+          <label>Keywords to Include</label>
+          <div class="tag-input-container">
+            <div class="tag-input-row">
+              <div class="tag-input-wrap" id="wiz-include-tags" data-field="include_keywords" data-placeholder="e.g. Python, AWS"></div>
+              <button type="button" class="tag-add-btn" onclick="addTagFromInput('wiz-include-tags')">Add</button>
+            </div>
+            <div class="form-hint">Jobs must mention these keywords to pass the filter.</div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Keywords to Exclude</label>
+          <div class="tag-input-container">
+            <div class="tag-input-row">
+              <div class="tag-input-wrap" id="wiz-exclude-tags" data-field="exclude_keywords" data-placeholder="e.g. Intern, Unpaid"></div>
+              <button type="button" class="tag-add-btn" onclick="addTagFromInput('wiz-exclude-tags')">Add</button>
+            </div>
+            <div class="form-hint">Jobs with these keywords are automatically skipped.</div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Experience Level</label>
+          <div class="checkboxes-group">
+            <label><input type="checkbox" value="entry" class="wiz-exp-level"><span>Entry</span></label>
+            <label><input type="checkbox" value="mid" class="wiz-exp-level"><span>Mid</span></label>
+            <label><input type="checkbox" value="senior" class="wiz-exp-level"><span>Senior</span></label>
+            <label><input type="checkbox" value="lead" class="wiz-exp-level"><span>Lead</span></label>
+          </div>
+        </div>
+      </div>
+      <div class="wizard-nav">
+        <button class="btn btn-ghost" onclick="wizardPrev()">Back</button>
+        <button class="btn btn-primary" onclick="wizardNext()">Next</button>
+      </div>
+    </div>
+
+    <!-- Step 5: Fallback Resume -->
+    <div class="wizard-step" data-step="4">
+      <h2>Fallback Resume</h2>
+      <p class="subtitle">
+        Upload a PDF or DOCX resume to use when Claude Code is unavailable for generating tailored resumes. This is optional.
+      </p>
+      <div class="file-upload-zone" id="wiz-resume-zone" onclick="document.getElementById('wiz-resume-input').click()">
+        <input type="file" id="wiz-resume-input" accept=".pdf,.docx">
+        <div id="wiz-resume-label">
+          <div style="font-size:2rem; margin-bottom:8px; opacity:.5;">&#128196;</div>
+          <div>Click to upload or drag & drop</div>
+          <div class="text-dim" style="font-size:.82rem; margin-top:4px;">PDF or DOCX, max 5MB</div>
+        </div>
+      </div>
+      <div class="wizard-nav">
+        <button class="btn btn-ghost" onclick="wizardPrev()">Back</button>
+        <div class="flex gap-sm">
+          <button class="btn btn-ghost" onclick="wizardNext()">Skip</button>
+          <button class="btn btn-primary" onclick="wizardNext()">Next</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 6: Platform Login -->
+    <div class="wizard-step" data-step="5">
+      <h2>Platform Login</h2>
+      <p class="subtitle">
+        AutoApply opens a browser window where you can log into your accounts. Your sessions are saved so you only need to do this once.
+      </p>
+      <div class="flex-col gap-md" style="margin-top:8px">
+        <div class="flex items-center gap-md" style="justify-content:center;">
+          <button class="btn btn-primary" id="wizard-linkedin-login" onclick="openLoginBrowser('https://www.linkedin.com/login')">
+            Open LinkedIn Login
+          </button>
+          <span id="wiz-linkedin-session" class="status-badge" style="font-size:.8rem;"><span class="dot dot-gray"></span> Not connected</span>
+        </div>
+        <div class="flex items-center gap-md" style="justify-content:center;">
+          <button class="btn btn-primary" id="wizard-indeed-login" onclick="openLoginBrowser('https://secure.indeed.com/auth')">
+            Open Indeed Login
+          </button>
+          <span id="wiz-indeed-session" class="status-badge" style="font-size:.8rem;"><span class="dot dot-gray"></span> Not connected</span>
+        </div>
+        <button class="btn btn-ghost hidden" id="wizard-close-browser" onclick="closeLoginBrowser()" style="width:100%; justify-content:center;">
+          Close Browser
+        </button>
+        <div id="wizard-login-status" class="text-dim" style="font-size:.88rem; text-align:center;"></div>
+      </div>
+      <div class="wizard-nav">
+        <button class="btn btn-ghost" onclick="wizardPrev()">Back</button>
+        <button class="btn btn-primary" onclick="closeLoginBrowser();wizardNext()">Next</button>
+      </div>
+    </div>
+
+    <!-- Step 7: Done -->
+    <div class="wizard-step" data-step="6">
+      <h2 style="color:var(--success);">You're All Set!</h2>
+      <p class="subtitle">
+        AutoApply is configured and ready to help you land your next role. Here's a summary:
+      </p>
+      <div id="wizard-summary" class="card" style="font-size:.9rem; line-height:1.8; margin-bottom:8px;"></div>
+      <div class="wizard-nav">
+        <button class="btn btn-ghost" onclick="wizardPrev()">Back</button>
+        <button class="btn btn-success btn-lg" onclick="wizardFinish()">Go to Dashboard</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     NAVBAR
+     ════════════════════════════════════════════════════════════════ -->
+<nav id="navbar" class="hidden">
+  <div class="logo">Auto<span>Apply</span></div>
+  <ul class="nav-tabs">
+    <li><a class="active" data-screen="dashboard">Dashboard</a></li>
+    <li><a data-screen="applications">Applications</a></li>
+    <li><a data-screen="profile">Profile</a></li>
+    <li><a data-screen="analytics">Analytics</a></li>
+    <li><a data-screen="settings">Settings</a></li>
+  </ul>
+  <div class="nav-right">
+    <span class="flex items-center gap-sm" id="nav-claude-indicator">
+      <span class="dot dot-gray"></span>
+      <span>Claude Code</span>
+    </span>
+  </div>
+</nav>
+
+<!-- ════════════════════════════════════════════════════════════════
+     SCREENS
+     ════════════════════════════════════════════════════════════════ -->
+<div class="main-content hidden" id="app-screens">
+
+  <!-- DASHBOARD -->
+  <div class="screen" id="screen-dashboard">
+    <div class="card" style="margin-bottom:24px">
+      <div class="bot-control">
+        <div class="bot-status-text">
+          <span class="dot dot-gray dot-pulse" id="bot-dot"></span>
+          <span id="bot-status-label">Stopped</span>
+        </div>
+        <div class="bot-stats">
+          <div class="bot-stat"><div class="num" id="stat-found">0</div><div class="label">Found</div></div>
+          <div class="bot-stat"><div class="num" id="stat-applied">0</div><div class="label">Applied</div></div>
+          <div class="bot-stat"><div class="num" id="stat-errors">0</div><div class="label">Errors</div></div>
+          <div class="bot-stat"><div class="num" id="stat-uptime">--:--</div><div class="label">Uptime</div></div>
+        </div>
+        <div class="mode-selector">
+          <label>Mode:</label>
+          <select id="apply-mode-select" onchange="changeApplyMode(this.value)">
+            <option value="full_auto">Full Auto</option>
+            <option value="review" selected>Review</option>
+            <option value="watch">Watch</option>
+          </select>
+        </div>
+        <div class="bot-buttons">
+          <button class="btn btn-success btn-sm" id="btn-start" onclick="botControl('start')">Start</button>
+          <button class="btn btn-warning btn-sm" id="btn-pause" onclick="botControl('pause')" disabled>Pause</button>
+          <button class="btn btn-danger btn-sm"  id="btn-stop"  onclick="botControl('stop')"  disabled>Stop</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="claude-warning-banner" class="card hidden" style="margin-bottom:24px;background:#3d2e00;border:1px solid #d97706;padding:12px 16px;display:flex;align-items:center;gap:10px">
+      <span style="font-size:18px">&#9888;</span>
+      <span style="color:#fbbf24;font-size:14px">Claude Code not detected &mdash; using fallback templates. Install <a href="https://docs.anthropic.com/en/docs/claude-code" target="_blank" style="color:#60a5fa;text-decoration:underline">Claude Code</a> for AI-tailored documents.</span>
+    </div>
+
+    <!-- Review Card — shown when bot is awaiting review decision -->
+    <div id="review-card" class="review-card hidden">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <div>
+          <h3 id="review-job-title">Job Title at Company</h3>
+          <div class="review-meta">
+            <span id="review-platform">linkedin</span> &middot;
+            Match score: <strong id="review-score">85</strong>%
+          </div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="reviewSkip()" style="white-space:nowrap;">Skip</button>
+      </div>
+      <div class="review-section">
+        <h4>Cover Letter</h4>
+        <textarea id="review-cover-letter"></textarea>
+      </div>
+      <div class="review-actions">
+        <button class="btn btn-success" onclick="reviewApprove()">Approve &amp; Apply</button>
+        <button class="btn btn-primary" onclick="reviewEdit()">Edit &amp; Apply</button>
+        <button class="btn btn-warning" id="review-manual-submit" onclick="reviewManualSubmit()">Apply Manually</button>
+        <button class="btn btn-ghost" onclick="reviewSkip()">Skip</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+        <h3 style="color:var(--text-bright); display:flex; align-items:center; gap:8px;">
+          Activity Feed
+          <span id="feed-count" class="text-dim" style="font-size:.78rem; font-weight:400;"></span>
+        </h3>
+        <button class="btn btn-sm" style="font-size:.78rem; padding:4px 12px; background:var(--accent); border:1px solid var(--border);" onclick="clearFeed()">Clear</button>
+      </div>
+      <div class="feed-list" id="feed-list">
+        <div class="text-center text-dim" id="feed-empty" style="padding:40px 0;">
+          No activity yet. Start the bot to begin.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- APPLICATIONS -->
+  <div class="screen hidden" id="screen-applications">
+    <div class="card" style="margin-bottom:20px">
+      <div class="filter-bar">
+        <select class="form-control" id="filter-status" onchange="loadApplications()">
+          <option value="">All Statuses</option>
+          <option value="applied">Applied</option>
+          <option value="interview">Interview</option>
+          <option value="rejected">Rejected</option>
+          <option value="offer">Offer</option>
+          <option value="withdrawn">Withdrawn</option>
+          <option value="error">Error</option>
+          <option value="manual_required">Manual Required</option>
+        </select>
+        <select class="form-control" id="filter-platform" onchange="loadApplications()">
+          <option value="">All Platforms</option>
+          <option value="linkedin">LinkedIn</option>
+          <option value="indeed">Indeed</option>
+        </select>
+        <input type="text" class="form-control" id="filter-search" placeholder="Search jobs..." oninput="debounceSearch()">
+        <button class="btn btn-ghost btn-sm" onclick="exportCSV()">Export CSV</button>
+      </div>
+    </div>
+    <div class="card">
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Company</th>
+              <th>Job Title</th>
+              <th>Platform</th>
+              <th>Match</th>
+              <th>Status</th>
+              <th>Applied</th>
+              <th>Resume</th>
+              <th>Cover Letter</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody id="applications-body">
+            <tr><td colspan="9" class="text-center text-dim" style="padding:40px 0;">Loading applications...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination" id="applications-pagination"></div>
+    </div>
+  </div>
+
+  <!-- PROFILE -->
+  <div class="screen hidden" id="screen-profile">
+    <div class="flex justify-between items-center" style="margin-bottom:20px;">
+      <h2 style="color:var(--text-bright);">Experience Files</h2>
+      <div class="flex items-center gap-md">
+        <span class="flex items-center gap-sm" id="profile-claude-indicator">
+          <span class="dot dot-gray"></span>
+          <span style="font-size:.85rem;">Claude Code</span>
+        </span>
+        <button class="btn btn-primary btn-sm" onclick="showFileModal()">+ New File</button>
+      </div>
+    </div>
+    <div class="file-grid" id="profile-file-grid">
+      <div class="text-center text-dim" style="padding:40px 0; grid-column: 1/-1;">Loading files...</div>
+    </div>
+  </div>
+
+  <!-- ANALYTICS -->
+  <div class="screen hidden" id="screen-analytics">
+    <h2 style="color:var(--text-bright); margin-bottom:20px;">Analytics</h2>
+    <div class="card" style="margin-bottom:20px">
+      <h3 style="margin-bottom:16px;">Applications Over Time</h3>
+      <div class="chart-container"><canvas id="chart-daily"></canvas></div>
+    </div>
+    <div class="analytics-grid">
+      <div class="card">
+        <h3 style="margin-bottom:16px;">Status Breakdown</h3>
+        <div class="chart-container"><canvas id="chart-status"></canvas></div>
+      </div>
+      <div class="card">
+        <h3 style="margin-bottom:16px;">By Platform</h3>
+        <div class="chart-container"><canvas id="chart-platform"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS -->
+  <div class="screen hidden" id="screen-settings">
+    <h2 style="color:var(--text-bright); margin-bottom:20px;">Settings</h2>
+    <div class="card">
+      <div class="flex-col gap-lg">
+        <h3>Profile</h3>
+        <div class="settings-grid">
+          <div class="form-group">
+            <label>First Name</label>
+            <input type="text" class="form-control" id="set-first-name">
+          </div>
+          <div class="form-group">
+            <label>Last Name</label>
+            <input type="text" class="form-control" id="set-last-name">
+          </div>
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" class="form-control" id="set-email">
+          </div>
+          <div class="form-group">
+            <label>Phone</label>
+            <div style="display:flex; gap:8px;">
+              <input type="text" class="form-control" id="set-phone-code" style="width:70px; flex-shrink:0;">
+              <input type="tel" class="form-control" id="set-phone" style="flex:1;">
+            </div>
+          </div>
+        </div>
+        <div class="settings-grid">
+          <div class="form-group">
+            <label>Address Line 1</label>
+            <input type="text" class="form-control" id="set-address1">
+          </div>
+          <div class="form-group">
+            <label>Address Line 2</label>
+            <input type="text" class="form-control" id="set-address2">
+          </div>
+          <div class="form-group">
+            <label>City</label>
+            <input type="text" class="form-control" id="set-city">
+          </div>
+          <div class="form-group">
+            <label>State</label>
+            <input type="text" class="form-control" id="set-state">
+          </div>
+          <div class="form-group">
+            <label>ZIP Code</label>
+            <input type="text" class="form-control" id="set-zip">
+          </div>
+          <div class="form-group">
+            <label>Country</label>
+            <input type="text" class="form-control" id="set-country">
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Bio</label>
+          <textarea class="form-control" id="set-bio" rows="3"></textarea>
+        </div>
+        <div class="settings-grid">
+          <div class="form-group">
+            <label>LinkedIn URL</label>
+            <input type="url" class="form-control" id="set-linkedin">
+          </div>
+          <div class="form-group">
+            <label>Portfolio URL</label>
+            <input type="url" class="form-control" id="set-portfolio">
+          </div>
+        </div>
+
+        <hr style="border:none; border-top:1px solid var(--border); margin:8px 0;">
+        <h3>Job Preferences</h3>
+        <div class="form-group">
+          <label>Job Titles</label>
+          <div class="tag-input-container">
+            <div class="tag-input-row">
+              <div class="tag-input-wrap" id="set-titles-tags" data-field="titles" data-placeholder="e.g. Software Engineer"></div>
+              <button type="button" class="tag-add-btn" onclick="addTagFromInput('set-titles-tags')">Add</button>
+            </div>
+            <div class="tag-suggestions" data-for="set-titles-tags">
+              <span class="tag-suggestion" onclick="addTag('set-titles-tags','Software Engineer')">Software Engineer</span>
+              <span class="tag-suggestion" onclick="addTag('set-titles-tags','Product Manager')">Product Manager</span>
+              <span class="tag-suggestion" onclick="addTag('set-titles-tags','Data Scientist')">Data Scientist</span>
+              <span class="tag-suggestion" onclick="addTag('set-titles-tags','Program Manager')">Program Manager</span>
+              <span class="tag-suggestion" onclick="addTag('set-titles-tags','UX Designer')">UX Designer</span>
+              <span class="tag-suggestion" onclick="addTag('set-titles-tags','DevOps Engineer')">DevOps Engineer</span>
+            </div>
+            <div class="form-hint">Add each title you'd like to search for. The bot searches all of them.</div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Preferred Locations</label>
+          <div class="tag-input-container">
+            <div class="tag-input-row">
+              <div class="tag-input-wrap" id="set-locations-tags" data-field="locations" data-placeholder="e.g. New York, NY"></div>
+              <button type="button" class="tag-add-btn" onclick="addTagFromInput('set-locations-tags')">Add</button>
+            </div>
+            <div class="tag-suggestions" data-for="set-locations-tags">
+              <span class="tag-suggestion" onclick="addTag('set-locations-tags','Remote')">Remote</span>
+              <span class="tag-suggestion" onclick="addTag('set-locations-tags','United States')">United States</span>
+              <span class="tag-suggestion" onclick="addTag('set-locations-tags','New York, NY')">New York, NY</span>
+              <span class="tag-suggestion" onclick="addTag('set-locations-tags','San Francisco, CA')">San Francisco, CA</span>
+              <span class="tag-suggestion" onclick="addTag('set-locations-tags','Austin, TX')">Austin, TX</span>
+              <span class="tag-suggestion" onclick="addTag('set-locations-tags','Seattle, WA')">Seattle, WA</span>
+            </div>
+            <div class="form-hint">Add cities or "Remote". The bot searches all locations.</div>
+          </div>
+        </div>
+        <div class="flex items-center gap-md">
+          <label style="font-weight:600; font-size:.9rem; color:var(--text-dim);">Remote Only</label>
+          <label class="toggle-switch">
+            <input type="checkbox" id="set-remote">
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="form-group">
+          <label>Minimum Salary</label>
+          <input type="number" class="form-control" id="set-salary" style="max-width:220px">
+        </div>
+        <div class="form-group">
+          <label>Keywords to Include</label>
+          <div class="tag-input-container">
+            <div class="tag-input-row">
+              <div class="tag-input-wrap" id="set-include-tags" data-field="include_keywords" data-placeholder="e.g. Python, AWS"></div>
+              <button type="button" class="tag-add-btn" onclick="addTagFromInput('set-include-tags')">Add</button>
+            </div>
+            <div class="form-hint">Jobs must mention these keywords to pass the filter.</div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Keywords to Exclude</label>
+          <div class="tag-input-container">
+            <div class="tag-input-row">
+              <div class="tag-input-wrap" id="set-exclude-tags" data-field="exclude_keywords" data-placeholder="e.g. Intern, Unpaid"></div>
+              <button type="button" class="tag-add-btn" onclick="addTagFromInput('set-exclude-tags')">Add</button>
+            </div>
+            <div class="form-hint">Jobs with these keywords are automatically skipped.</div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Experience Levels</label>
+          <div class="checkboxes-group">
+            <label><input type="checkbox" value="entry" class="set-exp-level"><span>Entry</span></label>
+            <label><input type="checkbox" value="mid" class="set-exp-level"><span>Mid</span></label>
+            <label><input type="checkbox" value="senior" class="set-exp-level"><span>Senior</span></label>
+            <label><input type="checkbox" value="lead" class="set-exp-level"><span>Lead</span></label>
+          </div>
+        </div>
+
+        <hr style="border:none; border-top:1px solid var(--border); margin:8px 0;">
+        <h3>Platform Login</h3>
+        <p style="color:var(--text-dim); font-size:.85rem; margin-bottom:12px;">
+          Open a browser to log into your job platforms. Your login session is saved so the bot can apply on your behalf.
+        </p>
+        <div class="flex-col gap-sm">
+          <div class="flex items-center gap-md" style="flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" id="settings-linkedin-login" onclick="openLoginBrowser('https://www.linkedin.com/login')">Open LinkedIn Login</button>
+            <span id="linkedin-session-status" class="status-badge" style="font-size:.8rem;"><span class="dot dot-gray"></span> Not connected</span>
+          </div>
+          <div class="flex items-center gap-md" style="flex-wrap:wrap;">
+            <button class="btn btn-primary btn-sm" id="settings-indeed-login" onclick="openLoginBrowser('https://secure.indeed.com/auth')">Open Indeed Login</button>
+            <span id="indeed-session-status" class="status-badge" style="font-size:.8rem;"><span class="dot dot-gray"></span> Not connected</span>
+          </div>
+          <button class="btn btn-ghost btn-sm hidden" id="settings-close-browser" onclick="closeLoginBrowser()" style="align-self:flex-start;">Close Browser</button>
+        </div>
+
+        <hr style="border:none; border-top:1px solid var(--border); margin:8px 0;">
+        <h3>Schedule</h3>
+        <p style="color:var(--text-dim); font-size:.85rem; margin-bottom:8px;">
+          Auto-start and stop the bot on a time schedule. When enabled, the bot runs only during the configured days and time window.
+        </p>
+        <div class="flex items-center gap-md" style="margin-bottom:12px;">
+          <label style="font-weight:600; font-size:.9rem; color:var(--text-dim);">Enable Schedule</label>
+          <label class="toggle-switch">
+            <input type="checkbox" id="set-schedule-enabled">
+            <span class="slider"></span>
+          </label>
+          <span id="schedule-status-badge" class="hidden" style="font-size:.8rem; padding:2px 10px; border-radius:12px; background:var(--success); color:#000; font-weight:600;">Active</span>
+        </div>
+        <div id="schedule-fields">
+          <div class="form-group">
+            <label>Days of Week</label>
+            <div class="checkboxes-group">
+              <label><input type="checkbox" value="mon" class="set-schedule-day"><span>Mon</span></label>
+              <label><input type="checkbox" value="tue" class="set-schedule-day"><span>Tue</span></label>
+              <label><input type="checkbox" value="wed" class="set-schedule-day"><span>Wed</span></label>
+              <label><input type="checkbox" value="thu" class="set-schedule-day"><span>Thu</span></label>
+              <label><input type="checkbox" value="fri" class="set-schedule-day"><span>Fri</span></label>
+              <label><input type="checkbox" value="sat" class="set-schedule-day"><span>Sat</span></label>
+              <label><input type="checkbox" value="sun" class="set-schedule-day"><span>Sun</span></label>
+            </div>
+          </div>
+          <div class="settings-grid">
+            <div class="form-group">
+              <label>Start Time</label>
+              <input type="time" class="form-control" id="set-schedule-start" value="09:00">
+            </div>
+            <div class="form-group">
+              <label>End Time</label>
+              <input type="time" class="form-control" id="set-schedule-end" value="17:00">
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;">
+          <button class="btn btn-success" onclick="saveSettings()">Save Settings</button>
+          <span id="settings-saved-msg" class="hidden" style="margin-left:12px; color:var(--success); font-weight:600;">Saved!</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════════
+     MODALS
+     ════════════════════════════════════════════════════════════════ -->
+
+<!-- Cover Letter Modal -->
+<div class="modal-overlay hidden" id="modal-cover-letter">
+  <div class="modal-box">
+    <button class="modal-close" onclick="closeModal('modal-cover-letter')">&times;</button>
+    <h3>Cover Letter</h3>
+    <div id="modal-cover-letter-content" style="white-space:pre-wrap; line-height:1.7; font-size:.92rem; color:var(--text);"></div>
+  </div>
+</div>
+
+<!-- Application Detail Modal -->
+<div class="modal-overlay hidden" id="modal-app-detail">
+  <div class="modal-box" style="max-width:720px;">
+    <button class="modal-close" onclick="closeModal('modal-app-detail')">&times;</button>
+    <div id="app-detail-content">
+      <div class="text-center text-dim" style="padding:30px;">Loading...</div>
+    </div>
+  </div>
+</div>
+
+<!-- File Edit Modal -->
+<div class="modal-overlay hidden" id="modal-file-edit">
+  <div class="modal-box" style="max-width:700px;">
+    <button class="modal-close" onclick="closeModal('modal-file-edit')">&times;</button>
+    <h3 id="modal-file-title">New Experience File</h3>
+    <div class="flex-col gap-md">
+      <div class="form-group">
+        <label>Filename</label>
+        <input type="text" class="form-control" id="modal-file-name" placeholder="e.g. work_experience.txt">
+      </div>
+      <div class="form-group">
+        <label>Content</label>
+        <textarea class="form-control" id="modal-file-content" rows="14" placeholder="Enter your experience details..."></textarea>
+      </div>
+      <div class="flex gap-sm">
+        <button class="btn btn-success" onclick="saveFile()">Save</button>
+        <button class="btn btn-ghost" onclick="closeModal('modal-file-edit')">Cancel</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Confirm Modal -->
+<div class="modal-overlay hidden" id="modal-confirm-delete">
+  <div class="modal-box" style="max-width:400px; text-align:center;">
+    <h3>Delete File?</h3>
+    <p class="text-dim" style="margin:12px 0 24px;">This action cannot be undone.</p>
+    <div class="flex gap-sm" style="justify-content:center;">
+      <button class="btn btn-danger" id="btn-confirm-delete">Delete</button>
+      <button class="btn btn-ghost" onclick="closeModal('modal-confirm-delete')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   STATE
+   ═══════════════════════════════════════════════════════════════ */
+const state = {
+  currentScreen: 'dashboard',
+  wizardStep: 0,
+  wizardData: { profile: {}, preferences: {}, resume_file: null },
+  tagInputs: {},            // id -> string[]
+  botStatus: 'stopped',     // running | paused | stopped
+  botStartTime: null,
+  uptimeInterval: null,
+  stats: { found: 0, applied: 0, errors: 0 },
+  appPage: 1,
+  appPageSize: 15,
+  searchTimeout: null,
+  editingFile: null,        // filename when editing, null when creating
+  claudeAvailable: false,
+  profileFiles: [],         // cached files from /api/profile/experiences
+};
+
+/* ═══════════════════════════════════════════════════════════════
+   SOCKET.IO
+   ═══════════════════════════════════════════════════════════════ */
+let socket;
+try {
+  socket = io();
+  socket.on('connect', () => console.log('[socket] connected'));
+  socket.on('bot_status', handleBotStatus);
+  socket.on('feed_event', handleFeedEvent);
+} catch (e) {
+  console.warn('[socket] Could not connect:', e);
+}
+
+function handleBotStatus(data) {
+  if (data.status) updateBotUI(data.status);
+  // Sync stats from server (backend sends flat fields)
+  if (typeof data.jobs_found_today === 'number') state.stats.found = data.jobs_found_today;
+  if (typeof data.applied_today === 'number')    state.stats.applied = data.applied_today;
+  if (typeof data.errors_today === 'number')     state.stats.errors = data.errors_today;
+  renderStats();
+  if (typeof data.claude_code_available === 'boolean') {
+    state.claudeAvailable = data.claude_code_available;
+    updateClaudeIndicators();
+    const banner = document.getElementById('claude-warning-banner');
+    if (banner) banner.classList.toggle('hidden', state.claudeAvailable);
+  }
+  // Hide review card if bot is no longer awaiting review
+  if (data.awaiting_review === false) {
+    hideReviewCard();
+  }
+}
+
+function handleFeedEvent(evt) {
+  addFeedItem(evt);
+  // Update quick stats
+  if (evt.type === 'FOUND')   state.stats.found++;
+  if (evt.type === 'APPLIED') state.stats.applied++;
+  if (evt.type === 'ERROR' || evt.type === 'CAPTCHA') state.stats.errors++;
+  renderStats();
+
+  // Show review card when REVIEW event arrives
+  if (evt.type === 'REVIEW') {
+    showReviewCard(evt);
+  }
+  // Hide review card on APPLIED, SKIPPED, or ERROR for the same job
+  if (['APPLIED', 'SKIPPED', 'ERROR'].includes(evt.type)) {
+    hideReviewCard();
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   INITIALIZATION
+   ═══════════════════════════════════════════════════════════════ */
+document.addEventListener('DOMContentLoaded', async () => {
+  initTagInputs();
+  initNavTabs();
+  initFileUpload();
+
+  try {
+    const res = await fetch('/api/setup/status');
+    const data = await res.json();
+    state.claudeAvailable = !!data.claude_code_available;
+    updateClaudeIndicators();
+    const banner = document.getElementById('claude-warning-banner');
+    if (banner) banner.classList.toggle('hidden', state.claudeAvailable);
+
+    if (data.is_first_run) {
+      showWizard(data);
+    } else {
+      showApp();
+    }
+  } catch (e) {
+    console.warn('Could not reach setup API, showing app:', e);
+    showApp();
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   TAG INPUT SYSTEM
+   ═══════════════════════════════════════════════════════════════ */
+function initTagInputs() {
+  document.querySelectorAll('.tag-input-wrap').forEach(wrap => {
+    const id = wrap.id;
+    state.tagInputs[id] = [];
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.placeholder = wrap.dataset.placeholder || 'Type and press Enter...';
+    wrap.appendChild(input);
+    wrap.addEventListener('click', () => input.focus());
+
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && input.value.trim()) {
+        e.preventDefault();
+        _addFromInput(id, input);
+      }
+      if (e.key === 'Backspace' && !input.value && state.tagInputs[id].length) {
+        removeTag(id, state.tagInputs[id].length - 1);
+      }
+    });
+    // Also add on comma for quick multi-add
+    input.addEventListener('input', () => {
+      const v = input.value;
+      if (v.includes(',')) {
+        const parts = v.split(',');
+        // Add all complete parts (before last comma)
+        parts.slice(0, -1).forEach(p => {
+          const t = p.trim();
+          if (t) addTag(id, t);
+        });
+        // Keep the part after last comma as ongoing input
+        input.value = parts[parts.length - 1];
+      }
+    });
+  });
+}
+
+function _addFromInput(wrapperId, input) {
+  const text = input.value.trim().replace(/,+$/, '').trim();
+  if (text) {
+    addTag(wrapperId, text);
+    input.value = '';
+  }
+}
+
+function addTagFromInput(wrapperId) {
+  const wrap = document.getElementById(wrapperId);
+  const input = wrap.querySelector('input');
+  _addFromInput(wrapperId, input);
+  input.focus();
+}
+
+function addTag(wrapperId, text) {
+  if (!text || state.tagInputs[wrapperId].includes(text)) return;
+  state.tagInputs[wrapperId].push(text);
+  renderTags(wrapperId);
+  updateSuggestions(wrapperId);
+}
+
+function removeTag(wrapperId, idx) {
+  state.tagInputs[wrapperId].splice(idx, 1);
+  renderTags(wrapperId);
+  updateSuggestions(wrapperId);
+}
+
+function renderTags(wrapperId) {
+  const wrap = document.getElementById(wrapperId);
+  const input = wrap.querySelector('input');
+  wrap.querySelectorAll('.tag').forEach(t => t.remove());
+  state.tagInputs[wrapperId].forEach((text, idx) => {
+    const tag = document.createElement('span');
+    tag.className = 'tag';
+    tag.innerHTML = `${escHtml(text)} <span class="tag-remove" onclick="removeTag('${wrapperId}', ${idx})">&times;</span>`;
+    wrap.insertBefore(tag, input);
+  });
+}
+
+function setTags(wrapperId, arr) {
+  state.tagInputs[wrapperId] = Array.isArray(arr) ? [...arr] : [];
+  renderTags(wrapperId);
+  updateSuggestions(wrapperId);
+}
+
+function updateSuggestions(wrapperId) {
+  // Hide suggestion chips that are already added
+  document.querySelectorAll(`.tag-suggestions[data-for="${wrapperId}"] .tag-suggestion`).forEach(chip => {
+    const text = chip.textContent.trim();
+    chip.style.display = state.tagInputs[wrapperId].includes(text) ? 'none' : '';
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   NAV TABS
+   ═══════════════════════════════════════════════════════════════ */
+function initNavTabs() {
+  document.querySelectorAll('#navbar .nav-tabs a').forEach(a => {
+    a.addEventListener('click', () => switchScreen(a.dataset.screen));
+  });
+}
+
+function switchScreen(name) {
+  state.currentScreen = name;
+  document.querySelectorAll('#navbar .nav-tabs a').forEach(a => {
+    a.classList.toggle('active', a.dataset.screen === name);
+  });
+  document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+  const el = document.getElementById('screen-' + name);
+  if (el) el.classList.remove('hidden');
+
+  // Load data for the screen
+  if (name === 'dashboard') { loadFeedHistory(); loadApplyMode(); }
+  if (name === 'applications') loadApplications();
+  if (name === 'profile') loadProfileFiles();
+  if (name === 'analytics') loadAnalytics();
+  if (name === 'settings') loadSettings();
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   WIZARD
+   ═══════════════════════════════════════════════════════════════ */
+function showWizard(setupData) {
+  document.getElementById('wizard-overlay').classList.remove('hidden');
+  document.getElementById('navbar').classList.add('hidden');
+  document.getElementById('app-screens').classList.add('hidden');
+
+  // Claude status badge
+  const badge = document.getElementById('wizard-claude-status');
+  if (setupData && setupData.claude_code_available) {
+    badge.className = 'status-badge ok';
+    badge.innerHTML = '<span class="dot dot-green"></span> Claude Code available';
+  } else {
+    badge.className = 'status-badge warn';
+    badge.innerHTML = '<span class="dot dot-yellow"></span> Claude Code not detected (optional)';
+  }
+
+  // Build progress dots
+  const prog = document.getElementById('wizard-progress');
+  prog.innerHTML = '';
+  for (let i = 0; i < 7; i++) {
+    const d = document.createElement('div');
+    d.className = 'step-dot' + (i === 0 ? ' active' : '');
+    prog.appendChild(d);
+  }
+
+  setWizardStep(0);
+  wizardRefreshFiles();
+}
+
+function setWizardStep(n) {
+  state.wizardStep = n;
+  document.querySelectorAll('.wizard-step').forEach(s => s.classList.remove('active'));
+  const step = document.querySelector(`.wizard-step[data-step="${n}"]`);
+  if (step) step.classList.add('active');
+
+  // Update progress dots
+  document.querySelectorAll('.wizard-progress .step-dot').forEach((d, i) => {
+    d.className = 'step-dot' + (i < n ? ' done' : '') + (i === n ? ' active' : '');
+  });
+
+  // Build summary on last step
+  if (n === 6) buildWizardSummary();
+  // Check login sessions when entering Platform Login step
+  if (n === 5) checkLoginSessions();
+}
+
+function wizardNext() {
+  if (state.wizardStep < 6) setWizardStep(state.wizardStep + 1);
+}
+function wizardPrev() {
+  if (state.wizardStep > 0) setWizardStep(state.wizardStep - 1);
+}
+
+/* ── Platform Login Browser ────────────────────────────────────── */
+
+async function openLoginBrowser(url) {
+  try {
+    const res = await fetch('/api/login/open', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ url }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error || 'Failed to open browser');
+      return;
+    }
+    // Show the close button, update login button states
+    updateLoginUI(true);
+    // Poll until browser is closed externally
+    pollLoginStatus();
+  } catch (e) {
+    alert('Could not connect to server.');
+  }
+}
+
+async function closeLoginBrowser() {
+  try {
+    await fetch('/api/login/close', { method: 'POST' });
+  } catch { }
+  updateLoginUI(false);
+  setTimeout(checkLoginSessions, 500);
+}
+
+function updateLoginUI(isOpen) {
+  // Wizard buttons
+  const linkedinBtn = document.getElementById('wizard-linkedin-login');
+  const indeedBtn = document.getElementById('wizard-indeed-login');
+  const closeBtn = document.getElementById('wizard-close-browser');
+  if (linkedinBtn) linkedinBtn.disabled = isOpen;
+  if (indeedBtn) indeedBtn.disabled = isOpen;
+  if (closeBtn) closeBtn.classList.toggle('hidden', !isOpen);
+
+  // Settings buttons
+  const sLinkedin = document.getElementById('settings-linkedin-login');
+  const sIndeed = document.getElementById('settings-indeed-login');
+  const sClose = document.getElementById('settings-close-browser');
+  if (sLinkedin) sLinkedin.disabled = isOpen;
+  if (sIndeed) sIndeed.disabled = isOpen;
+  if (sClose) sClose.classList.toggle('hidden', !isOpen);
+}
+
+function pollLoginStatus() {
+  const iv = setInterval(async () => {
+    try {
+      const res = await fetch('/api/login/status');
+      const data = await res.json();
+      if (!data.open) {
+        clearInterval(iv);
+        updateLoginUI(false);
+        checkLoginSessions();
+      }
+    } catch {
+      clearInterval(iv);
+      updateLoginUI(false);
+    }
+  }, 2000);
+}
+
+async function checkLoginSessions() {
+  try {
+    const res = await fetch('/api/login/sessions');
+    if (!res.ok) return;
+    const data = await res.json();
+    const ids = [
+      { id: 'linkedin-session-status', connected: data.linkedin },
+      { id: 'indeed-session-status',   connected: data.indeed },
+      { id: 'wiz-linkedin-session',    connected: data.linkedin },
+      { id: 'wiz-indeed-session',      connected: data.indeed },
+    ];
+    for (const { id, connected } of ids) {
+      const el = document.getElementById(id);
+      if (!el) continue;
+      if (connected) {
+        el.innerHTML = '<span class="dot dot-green"></span> Connected';
+        el.className = 'status-badge ok';
+        el.style.fontSize = '.8rem';
+      } else {
+        el.innerHTML = '<span class="dot dot-gray"></span> Not connected';
+        el.className = 'status-badge';
+        el.style.fontSize = '.8rem';
+      }
+    }
+  } catch { }
+}
+
+async function wizardRefreshFiles() {
+  try {
+    const res = await fetch('/api/profile/status');
+    const data = await res.json();
+    document.getElementById('wizard-file-count').textContent = data.file_count || 0;
+  } catch { }
+}
+
+function buildWizardSummary() {
+  const first = document.getElementById('wiz-first-name').value;
+  const last = document.getElementById('wiz-last-name').value;
+  const name = (first + ' ' + last).trim() || '(not set)';
+  const email = document.getElementById('wiz-email').value || '(not set)';
+  const city = document.getElementById('wiz-city').value;
+  const st = document.getElementById('wiz-state').value;
+  const loc = [city, st].filter(Boolean).join(', ') || '(not set)';
+  const titles = state.tagInputs['wiz-titles-tags'] || [];
+  const locations = state.tagInputs['wiz-locations-tags'] || [];
+  const remote = document.getElementById('wiz-remote').checked;
+  const levels = [...document.querySelectorAll('.wiz-exp-level:checked')].map(c => c.value);
+  const hasResume = !!state.wizardData.resume_file;
+
+  document.getElementById('wizard-summary').innerHTML = `
+    <div><strong>Name:</strong> ${escHtml(name)}</div>
+    <div><strong>Email:</strong> ${escHtml(email)}</div>
+    <div><strong>Location:</strong> ${escHtml(loc)}</div>
+    <div><strong>Job Titles:</strong> ${titles.length ? escHtml(titles.join(', ')) : '(none)'}</div>
+    <div><strong>Locations:</strong> ${locations.length ? escHtml(locations.join(', ')) : '(none)'}</div>
+    <div><strong>Remote Only:</strong> ${remote ? 'Yes' : 'No'}</div>
+    <div><strong>Experience Levels:</strong> ${levels.length ? levels.join(', ') : '(none)'}</div>
+    <div><strong>Fallback Resume:</strong> ${hasResume ? 'Uploaded' : 'Skipped'}</div>
+  `;
+}
+
+async function wizardFinish() {
+  const config = {
+    profile: {
+      first_name:         document.getElementById('wiz-first-name').value,
+      last_name:          document.getElementById('wiz-last-name').value,
+      email:              document.getElementById('wiz-email').value,
+      phone_country_code: document.getElementById('wiz-phone-code').value || '+1',
+      phone:              document.getElementById('wiz-phone').value,
+      address_line1:      document.getElementById('wiz-address1').value,
+      address_line2:      document.getElementById('wiz-address2').value,
+      city:               document.getElementById('wiz-city').value,
+      state:              document.getElementById('wiz-state').value,
+      zip_code:           document.getElementById('wiz-zip').value,
+      country:            document.getElementById('wiz-country').value || 'United States',
+      bio:                document.getElementById('wiz-bio').value,
+      linkedin_url:       document.getElementById('wiz-linkedin').value,
+      portfolio_url:      document.getElementById('wiz-portfolio').value,
+    },
+    search_criteria: {
+      job_titles:        state.tagInputs['wiz-titles-tags'] || [],
+      locations:         state.tagInputs['wiz-locations-tags'] || [],
+      remote_only:       document.getElementById('wiz-remote').checked,
+      salary_min:        parseInt(document.getElementById('wiz-salary').value) || null,
+      keywords_include:  state.tagInputs['wiz-include-tags'] || [],
+      keywords_exclude:  state.tagInputs['wiz-exclude-tags'] || [],
+      experience_levels: [...document.querySelectorAll('.wiz-exp-level:checked')].map(c => c.value),
+    },
+  };
+
+  try {
+    await fetch('/api/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+  } catch (e) {
+    console.warn('Could not save config:', e);
+  }
+
+  // Upload resume if present
+  if (state.wizardData.resume_file) {
+    try {
+      const fd = new FormData();
+      fd.append('file', state.wizardData.resume_file);
+      await fetch('/api/profile/resume', { method: 'POST', body: fd });
+    } catch (e) {
+      console.warn('Could not upload resume:', e);
+    }
+  }
+
+  showApp();
+}
+
+function showApp() {
+  document.getElementById('wizard-overlay').classList.add('hidden');
+  document.getElementById('navbar').classList.remove('hidden');
+  document.getElementById('app-screens').classList.remove('hidden');
+  switchScreen('dashboard');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   FILE UPLOAD (wizard)
+   ═══════════════════════════════════════════════════════════════ */
+function initFileUpload() {
+  const input = document.getElementById('wiz-resume-input');
+  const zone = document.getElementById('wiz-resume-zone');
+
+  input.addEventListener('change', () => {
+    if (input.files.length) {
+      state.wizardData.resume_file = input.files[0];
+      zone.classList.add('has-file');
+      document.getElementById('wiz-resume-label').innerHTML =
+        `<div style="font-size:2rem; margin-bottom:8px;">&#9989;</div>
+         <div style="color:var(--success); font-weight:600;">${escHtml(input.files[0].name)}</div>
+         <div class="text-dim" style="font-size:.82rem; margin-top:4px;">Click to change</div>`;
+    }
+  });
+
+  // Drag and drop
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.style.borderColor = 'var(--info)'; });
+  zone.addEventListener('dragleave', () => { zone.style.borderColor = ''; });
+  zone.addEventListener('drop', e => {
+    e.preventDefault();
+    zone.style.borderColor = '';
+    if (e.dataTransfer.files.length) {
+      input.files = e.dataTransfer.files;
+      input.dispatchEvent(new Event('change'));
+    }
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   BOT CONTROL
+   ═══════════════════════════════════════════════════════════════ */
+async function botControl(action) {
+  try {
+    await fetch(`/api/bot/${action}`, { method: 'POST' });
+    updateBotUI(action === 'start' ? 'running' : action === 'pause' ? 'paused' : 'stopped');
+  } catch (e) {
+    console.warn('Bot control error:', e);
+  }
+}
+
+function updateBotUI(status) {
+  state.botStatus = status;
+  const dot = document.getElementById('bot-dot');
+  const label = document.getElementById('bot-status-label');
+  const btnStart = document.getElementById('btn-start');
+  const btnPause = document.getElementById('btn-pause');
+  const btnStop  = document.getElementById('btn-stop');
+
+  dot.className = 'dot dot-pulse';
+  if (status === 'running') {
+    dot.classList.add('dot-green');
+    label.textContent = 'Running';
+    btnStart.disabled = true;
+    btnPause.disabled = false;
+    btnStop.disabled  = false;
+    if (!state.botStartTime) state.botStartTime = Date.now();
+    startUptimeTimer();
+  } else if (status === 'paused') {
+    dot.classList.add('dot-yellow');
+    label.textContent = 'Paused';
+    btnStart.disabled = false;
+    btnPause.disabled = true;
+    btnStop.disabled  = false;
+    stopUptimeTimer();
+  } else {
+    dot.classList.add('dot-red');
+    dot.classList.remove('dot-pulse');
+    label.textContent = 'Stopped';
+    btnStart.disabled = false;
+    btnPause.disabled = true;
+    btnStop.disabled  = true;
+    state.botStartTime = null;
+    stopUptimeTimer();
+    document.getElementById('stat-uptime').textContent = '--:--';
+  }
+}
+
+function renderStats() {
+  document.getElementById('stat-found').textContent   = state.stats.found;
+  document.getElementById('stat-applied').textContent  = state.stats.applied;
+  document.getElementById('stat-errors').textContent   = state.stats.errors;
+}
+
+function startUptimeTimer() {
+  stopUptimeTimer();
+  state.uptimeInterval = setInterval(() => {
+    if (!state.botStartTime) return;
+    const s = Math.floor((Date.now() - state.botStartTime) / 1000);
+    const h = Math.floor(s / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    const sec = s % 60;
+    document.getElementById('stat-uptime').textContent =
+      (h ? h + ':' : '') + String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+  }, 1000);
+}
+function stopUptimeTimer() {
+  if (state.uptimeInterval) { clearInterval(state.uptimeInterval); state.uptimeInterval = null; }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   LIVE FEED
+   ═══════════════════════════════════════════════════════════════ */
+let feedStarted = false;
+let feedHistoryLoaded = false;
+
+async function loadFeedHistory() {
+  if (feedHistoryLoaded) return;
+  try {
+    const res = await fetch('/api/feed?limit=50');
+    if (!res.ok) return;
+    const events = await res.json();
+    if (!events.length) return;
+    // Events come newest-first from API; reverse so oldest is added first
+    const reversed = events.reverse();
+    for (const evt of reversed) {
+      addFeedItem({
+        type: evt.event_type,
+        job_title: evt.job_title,
+        company: evt.company,
+        platform: evt.platform,
+        message: evt.message,
+        timestamp: evt.created_at,
+      });
+    }
+    feedHistoryLoaded = true;
+  } catch (e) {
+    console.warn('[feed] Could not load history:', e);
+  }
+}
+
+function addFeedItem(evt) {
+  const list = document.getElementById('feed-list');
+  // Remove empty placeholder on first item
+  const empty = document.getElementById('feed-empty');
+  if (empty) empty.remove();
+
+  const item = document.createElement('div');
+  item.className = 'feed-item';
+
+  const time = evt.timestamp
+    ? new Date(evt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const type = evt.type || 'INFO';
+
+  // Backend sends job_title/company/platform/message
+  const title = evt.job_title || evt.title || '';
+  const company = evt.company || '';
+  const platform = evt.platform || '';
+  const message = evt.message || '';
+
+  // Build the detail line: show job info if available, otherwise show message
+  let detailHtml = '';
+  if (title) {
+    detailHtml = `<strong>${escHtml(title)}</strong>`;
+    if (company) detailHtml += ` at <strong>${escHtml(company)}</strong>`;
+    if (platform) detailHtml += ` <span class="text-dim">(${escHtml(platform)})</span>`;
+    // Show message as a secondary line if it adds info beyond the title
+    if (message && !message.includes(title)) {
+      detailHtml += `<span class="feed-msg">${escHtml(message)}</span>`;
+    }
+  } else if (message) {
+    detailHtml = `${escHtml(message)}`;
+  }
+
+  item.innerHTML = `
+    <span class="feed-time">${time}</span>
+    <span class="feed-badge ${escHtml(type)}">${escHtml(type)}</span>
+    <span class="feed-detail">${detailHtml}</span>
+  `;
+
+  list.prepend(item);
+
+  // Keep max 200 items
+  while (list.children.length > 200) list.removeChild(list.lastChild);
+
+  // Update counter
+  updateFeedCount();
+}
+
+function clearFeed() {
+  const list = document.getElementById('feed-list');
+  list.innerHTML = `<div class="text-center text-dim" id="feed-empty" style="padding:40px 0;">No activity yet. Start the bot to begin.</div>`;
+  feedStarted = false;
+  feedHistoryLoaded = false;
+  updateFeedCount();
+}
+
+function updateFeedCount() {
+  const list = document.getElementById('feed-list');
+  const count = list.querySelectorAll('.feed-item').length;
+  const el = document.getElementById('feed-count');
+  if (el) el.textContent = count > 0 ? `(${count})` : '';
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   APPLICATIONS
+   ═══════════════════════════════════════════════════════════════ */
+let searchTimeout = null;
+function debounceSearch() {
+  clearTimeout(searchTimeout);
+  searchTimeout = setTimeout(loadApplications, 350);
+}
+
+async function loadApplications() {
+  const status   = document.getElementById('filter-status').value;
+  const platform = document.getElementById('filter-platform').value;
+  const search   = document.getElementById('filter-search').value;
+  const params = new URLSearchParams({
+    page: state.appPage,
+    per_page: state.appPageSize,
+    ...(status && { status }),
+    ...(platform && { platform }),
+    ...(search && { search }),
+  });
+
+  const body = document.getElementById('applications-body');
+  try {
+    const res = await fetch('/api/applications?' + params);
+    const data = await res.json();
+    const apps = data.applications || [];
+    const total = data.total || 0;
+
+    if (!apps.length) {
+      body.innerHTML = '<tr><td colspan="9" class="text-center text-dim" style="padding:40px 0;">No applications found.</td></tr>';
+      document.getElementById('applications-pagination').innerHTML = '';
+      return;
+    }
+
+    body.innerHTML = apps.map(a => `
+      <tr class="clickable-row" onclick="viewApplicationDetail(${a.id})">
+        <td>${escHtml(a.company || '')}</td>
+        <td><strong>${escHtml(a.job_title || a.title || '')}</strong></td>
+        <td>${escHtml(a.platform || '')}</td>
+        <td><span class="match-pct" style="color:${matchColor(a.match_score)}">${a.match_score != null ? a.match_score + '%' : '--'}</span></td>
+        <td onclick="event.stopPropagation()">
+          <select onchange="updateAppStatus(${a.id}, this.value)">
+            ${['applied','interview','rejected','offer','withdrawn','error','manual_required'].map(s =>
+              `<option value="${s}" ${a.status === s ? 'selected' : ''}>${s.replace('_',' ').replace(/\\b\\w/g,c=>c.toUpperCase())}</option>`
+            ).join('')}
+          </select>
+        </td>
+        <td class="text-dim" style="white-space:nowrap;">${(a.applied_at || a.applied_date) ? new Date(a.applied_at || a.applied_date).toLocaleDateString() : '--'}</td>
+        <td onclick="event.stopPropagation()">${a.resume_path ? `<a href="/api/applications/${a.id}/resume" target="_blank" style="font-size:.82rem;">Download</a>` : '--'}</td>
+        <td onclick="event.stopPropagation()">${(a.cover_letter_text || a.cover_letter) ? `<button class="btn btn-ghost btn-sm" onclick="viewCoverLetter(${a.id})">View</button>` : '--'}</td>
+        <td onclick="event.stopPropagation()"><input class="notes-input" value="${escAttr(a.notes || '')}" onblur="updateAppNotes(${a.id}, this.value)" placeholder="Add notes..."></td>
+      </tr>
+    `).join('');
+
+    // Pagination
+    const pages = Math.ceil(total / state.appPageSize);
+    renderPagination(pages);
+  } catch (e) {
+    body.innerHTML = '<tr><td colspan="9" class="text-center text-dim" style="padding:40px 0;">Could not load applications.</td></tr>';
+  }
+}
+
+function renderPagination(totalPages) {
+  const wrap = document.getElementById('applications-pagination');
+  if (totalPages <= 1) { wrap.innerHTML = ''; return; }
+  let html = `<button ${state.appPage <= 1 ? 'disabled' : ''} onclick="goAppPage(${state.appPage - 1})">&laquo;</button>`;
+  const start = Math.max(1, state.appPage - 2);
+  const end = Math.min(totalPages, start + 4);
+  for (let i = start; i <= end; i++) {
+    html += `<button class="${i === state.appPage ? 'active' : ''}" onclick="goAppPage(${i})">${i}</button>`;
+  }
+  html += `<button ${state.appPage >= totalPages ? 'disabled' : ''} onclick="goAppPage(${state.appPage + 1})">&raquo;</button>`;
+  wrap.innerHTML = html;
+}
+
+function goAppPage(p) {
+  state.appPage = p;
+  loadApplications();
+}
+
+async function updateAppStatus(id, status) {
+  try { await fetch(`/api/applications/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }); } catch { }
+}
+
+async function updateAppNotes(id, notes) {
+  try { await fetch(`/api/applications/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notes }) }); loadApplications(); } catch { }
+}
+
+async function viewCoverLetter(id) {
+  try {
+    const res = await fetch(`/api/applications/${id}/cover_letter`);
+    const data = await res.json();
+    document.getElementById('modal-cover-letter-content').textContent = data.cover_letter_text || '(No cover letter)';
+    document.getElementById('modal-cover-letter').classList.remove('hidden');
+  } catch { }
+}
+
+async function viewApplicationDetail(id) {
+  const content = document.getElementById('app-detail-content');
+  content.innerHTML = '<div class="text-center text-dim" style="padding:30px;">Loading...</div>';
+  document.getElementById('modal-app-detail').classList.remove('hidden');
+  try {
+    const [appRes, eventsRes] = await Promise.all([
+      fetch(`/api/applications/${id}`),
+      fetch(`/api/applications/${id}/events`),
+    ]);
+    const app = await appRes.json();
+    const events = await eventsRes.json();
+    if (app.error) { content.innerHTML = `<div class="text-dim">${escHtml(app.error)}</div>`; return; }
+
+    const statusOptions = ['applied','interview','rejected','offer','withdrawn','error','manual_required'];
+    const fmtDate = d => d ? new Date(d).toLocaleString() : '--';
+
+    let timeline = '';
+    if (Array.isArray(events) && events.length) {
+      timeline = `<ul class="app-timeline">${events.map(e => `
+        <li>
+          <span class="badge badge-${badgeClass(e.event_type)}" style="font-size:.75rem;">${escHtml(e.event_type)}</span>
+          ${escHtml(e.message || '')}
+          <div class="timeline-time">${fmtDate(e.created_at)}</div>
+        </li>`).join('')}</ul>`;
+    } else {
+      timeline = '<div class="text-dim" style="font-size:.88rem;">No activity events recorded.</div>';
+    }
+
+    content.innerHTML = `
+      <div class="app-detail-header">
+        <h3>${escHtml(app.job_title || '')}</h3>
+        <div class="company-line">${escHtml(app.company || '')}${app.location ? ' &mdash; ' + escHtml(app.location) : ''}</div>
+      </div>
+      <div class="app-detail-grid">
+        <div><div class="detail-label">Platform</div><div class="detail-value">${escHtml(app.platform || '')}</div></div>
+        <div><div class="detail-label">Match Score</div><div class="detail-value"><span style="color:${matchColor(app.match_score)}">${app.match_score != null ? app.match_score + '%' : '--'}</span></div></div>
+        <div><div class="detail-label">Applied</div><div class="detail-value">${fmtDate(app.applied_at)}</div></div>
+        <div><div class="detail-label">Last Updated</div><div class="detail-value">${fmtDate(app.updated_at)}</div></div>
+        <div><div class="detail-label">Salary</div><div class="detail-value">${escHtml(app.salary || 'Not specified')}</div></div>
+        <div><div class="detail-label">Status</div><div class="detail-value">
+          <select id="detail-status-select" onchange="updateDetailStatus(${app.id})" style="font-size:.9rem;">
+            ${statusOptions.map(s => `<option value="${s}" ${app.status === s ? 'selected' : ''}>${s.replace('_',' ').replace(/\\b\\w/g,c=>c.toUpperCase())}</option>`).join('')}
+          </select>
+        </div></div>
+      </div>
+      ${app.error_message ? `<div class="app-detail-section"><h4>Error</h4><div style="color:var(--danger);font-size:.9rem;">${escHtml(app.error_message)}</div></div>` : ''}
+      <div class="app-detail-section">
+        <h4>Notes</h4>
+        <textarea class="app-detail-notes" id="detail-notes-input" placeholder="Add notes about this application...">${escHtml(app.notes || '')}</textarea>
+        <button class="btn btn-sm" style="margin-top:6px;" onclick="saveDetailNotes(${app.id})">Save Notes</button>
+      </div>
+      <div class="app-detail-section">
+        <h4>Activity Timeline</h4>
+        ${timeline}
+      </div>
+      <div class="app-detail-actions">
+        ${app.apply_url ? `<a href="${escAttr(app.apply_url)}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">View Job Posting</a>` : ''}
+        ${app.resume_path ? `<a href="/api/applications/${app.id}/resume" target="_blank" class="btn btn-ghost btn-sm">Download Resume</a>` : ''}
+        ${app.cover_letter_text ? `<button class="btn btn-ghost btn-sm" onclick="closeModal('modal-app-detail');viewCoverLetter(${app.id})">View Cover Letter</button>` : ''}
+      </div>
+    `;
+  } catch (e) {
+    content.innerHTML = '<div class="text-dim">Could not load application details.</div>';
+  }
+}
+
+function badgeClass(eventType) {
+  const map = { APPLIED: 'success', ERROR: 'danger', CAPTCHA: 'danger', FILTERED: 'dim', FOUND: 'info', GENERATING: 'info', APPLYING: 'info', REVIEW: 'review', SKIPPED: 'dim' };
+  return map[eventType] || 'info';
+}
+
+async function updateDetailStatus(id) {
+  const status = document.getElementById('detail-status-select').value;
+  try { await fetch(`/api/applications/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) }); } catch { }
+}
+
+async function saveDetailNotes(id) {
+  const notes = document.getElementById('detail-notes-input').value;
+  try { await fetch(`/api/applications/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ notes }) }); } catch { }
+}
+
+function exportCSV() {
+  const status   = document.getElementById('filter-status').value;
+  const platform = document.getElementById('filter-platform').value;
+  const search   = document.getElementById('filter-search').value;
+  const params = new URLSearchParams({
+    format: 'csv',
+    ...(status && { status }),
+    ...(platform && { platform }),
+    ...(search && { search }),
+  });
+  window.open('/api/applications/export?' + params, '_blank');
+}
+
+function matchColor(pct) {
+  if (pct == null) return 'var(--text-dim)';
+  if (pct >= 80) return 'var(--success)';
+  if (pct >= 60) return 'var(--warning)';
+  return 'var(--danger)';
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   PROFILE (Experience Files)
+   ═══════════════════════════════════════════════════════════════ */
+async function loadProfileFiles() {
+  const grid = document.getElementById('profile-file-grid');
+  try {
+    const res = await fetch('/api/profile/experiences');
+    const data = await res.json();
+    const files = data.files || [];
+    state.profileFiles = files;
+
+    if (!files.length) {
+      grid.innerHTML = '<div class="text-center text-dim" style="padding:40px 0; grid-column:1/-1;">No experience files yet. Click "+ New File" to create one.</div>';
+      return;
+    }
+
+    grid.innerHTML = files.map(f => {
+      const wordCount = (f.content || '').split(/\s+/).filter(w => w).length;
+      const preview = (f.content || '').slice(0, 100);
+      return `
+      <div class="file-card">
+        <h4>${escHtml(f.name)}</h4>
+        <div class="meta">
+          <span>${wordCount} words</span>
+          <span>${f.modified_at ? new Date(f.modified_at).toLocaleDateString() : ''}</span>
+        </div>
+        <div class="preview">${escHtml(preview)}${preview.length >= 100 ? '...' : ''}</div>
+        <div class="actions">
+          <button class="btn btn-ghost btn-sm" onclick="editFile('${escAttr(f.name)}')">Edit</button>
+          <button class="btn btn-danger btn-sm" onclick="confirmDeleteFile('${escAttr(f.name)}')">Delete</button>
+        </div>
+      </div>`;
+    }).join('');
+  } catch {
+    grid.innerHTML = '<div class="text-center text-dim" style="padding:40px 0; grid-column:1/-1;">Could not load files.</div>';
+  }
+}
+
+function showFileModal(filename) {
+  state.editingFile = filename || null;
+  document.getElementById('modal-file-title').textContent = filename ? 'Edit File' : 'New Experience File';
+  document.getElementById('modal-file-name').value = filename || '';
+  document.getElementById('modal-file-name').disabled = !!filename;
+  document.getElementById('modal-file-content').value = '';
+
+  if (filename) {
+    const cached = state.profileFiles.find(f => f.name === filename);
+    if (cached) {
+      document.getElementById('modal-file-content').value = cached.content || '';
+    }
+  }
+
+  document.getElementById('modal-file-edit').classList.remove('hidden');
+}
+
+function editFile(filename) { showFileModal(filename); }
+
+async function saveFile() {
+  const filename = document.getElementById('modal-file-name').value.trim();
+  const content  = document.getElementById('modal-file-content').value;
+  if (!filename) { alert('Please enter a filename.'); return; }
+
+  const method = state.editingFile ? 'PUT' : 'POST';
+  const url = state.editingFile
+    ? `/api/profile/experiences/${encodeURIComponent(state.editingFile)}`
+    : '/api/profile/experiences';
+
+  try {
+    await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, content }),
+    });
+    closeModal('modal-file-edit');
+    loadProfileFiles();
+  } catch (e) {
+    alert('Error saving file.');
+  }
+}
+
+function confirmDeleteFile(filename) {
+  document.getElementById('modal-confirm-delete').classList.remove('hidden');
+  document.getElementById('btn-confirm-delete').onclick = async () => {
+    try {
+      await fetch(`/api/profile/experiences/${encodeURIComponent(filename)}`, { method: 'DELETE' });
+    } catch { }
+    closeModal('modal-confirm-delete');
+    loadProfileFiles();
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SETTINGS
+   ═══════════════════════════════════════════════════════════════ */
+async function loadSettings() {
+  try {
+    const res = await fetch('/api/config');
+    const cfg = await res.json();
+    const p = cfg.profile || {};
+    const pr = cfg.search_criteria || {};
+
+    document.getElementById('set-first-name').value = p.first_name || '';
+    document.getElementById('set-last-name').value  = p.last_name || '';
+    document.getElementById('set-email').value      = p.email || '';
+    document.getElementById('set-phone-code').value = p.phone_country_code || '+1';
+    document.getElementById('set-phone').value      = p.phone || '';
+    document.getElementById('set-address1').value   = p.address_line1 || '';
+    document.getElementById('set-address2').value   = p.address_line2 || '';
+    document.getElementById('set-city').value       = p.city || '';
+    document.getElementById('set-state').value      = p.state || '';
+    document.getElementById('set-zip').value        = p.zip_code || '';
+    document.getElementById('set-country').value    = p.country || 'United States';
+    document.getElementById('set-bio').value        = p.bio || '';
+    document.getElementById('set-linkedin').value   = p.linkedin_url || '';
+    document.getElementById('set-portfolio').value  = p.portfolio_url || '';
+
+    setTags('set-titles-tags',    pr.job_titles || []);
+    setTags('set-locations-tags', pr.locations || []);
+    document.getElementById('set-remote').checked = !!pr.remote_only;
+    document.getElementById('set-salary').value   = pr.salary_min || '';
+    setTags('set-include-tags', pr.keywords_include || []);
+    setTags('set-exclude-tags', pr.keywords_exclude || []);
+
+    document.querySelectorAll('.set-exp-level').forEach(cb => {
+      cb.checked = (pr.experience_levels || []).includes(cb.value);
+    });
+
+    // Schedule
+    const sched = (cfg.bot || {}).schedule || {};
+    document.getElementById('set-schedule-enabled').checked = !!sched.enabled;
+    const schedDays = sched.days_of_week || ['mon','tue','wed','thu','fri'];
+    document.querySelectorAll('.set-schedule-day').forEach(cb => {
+      cb.checked = schedDays.includes(cb.value);
+    });
+    document.getElementById('set-schedule-start').value = sched.start_time || '09:00';
+    document.getElementById('set-schedule-end').value = sched.end_time || '17:00';
+    updateScheduleUI();
+    checkLoginSessions();
+  } catch { }
+}
+
+async function saveSettings() {
+  const config = {
+    profile: {
+      first_name:         document.getElementById('set-first-name').value,
+      last_name:          document.getElementById('set-last-name').value,
+      email:              document.getElementById('set-email').value,
+      phone_country_code: document.getElementById('set-phone-code').value || '+1',
+      phone:              document.getElementById('set-phone').value,
+      address_line1:      document.getElementById('set-address1').value,
+      address_line2:      document.getElementById('set-address2').value,
+      city:               document.getElementById('set-city').value,
+      state:              document.getElementById('set-state').value,
+      zip_code:           document.getElementById('set-zip').value,
+      country:            document.getElementById('set-country').value || 'United States',
+      bio:                document.getElementById('set-bio').value,
+      linkedin_url:       document.getElementById('set-linkedin').value,
+      portfolio_url:      document.getElementById('set-portfolio').value,
+    },
+    search_criteria: {
+      job_titles:        state.tagInputs['set-titles-tags'] || [],
+      locations:         state.tagInputs['set-locations-tags'] || [],
+      remote_only:       document.getElementById('set-remote').checked,
+      salary_min:        parseInt(document.getElementById('set-salary').value) || null,
+      keywords_include:  state.tagInputs['set-include-tags'] || [],
+      keywords_exclude:  state.tagInputs['set-exclude-tags'] || [],
+      experience_levels: [...document.querySelectorAll('.set-exp-level:checked')].map(c => c.value),
+    },
+  };
+
+  try {
+    await fetch('/api/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    });
+
+    // Save schedule separately via dedicated endpoint
+    const schedData = {
+      enabled:      document.getElementById('set-schedule-enabled').checked,
+      days_of_week: [...document.querySelectorAll('.set-schedule-day:checked')].map(c => c.value),
+      start_time:   document.getElementById('set-schedule-start').value,
+      end_time:     document.getElementById('set-schedule-end').value,
+    };
+    await fetch('/api/bot/schedule', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(schedData),
+    });
+    updateScheduleUI();
+
+    const msg = document.getElementById('settings-saved-msg');
+    msg.classList.remove('hidden');
+    setTimeout(() => msg.classList.add('hidden'), 2500);
+  } catch {
+    alert('Error saving settings.');
+  }
+}
+
+function updateScheduleUI() {
+  const enabled = document.getElementById('set-schedule-enabled').checked;
+  const badge = document.getElementById('schedule-status-badge');
+  if (enabled) {
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   APPLICATION MODE
+   ═══════════════════════════════════════════════════════════════ */
+async function changeApplyMode(mode) {
+  try {
+    await fetch('/api/config', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bot: { apply_mode: mode } }),
+    });
+  } catch (e) {
+    console.warn('Could not save apply_mode:', e);
+  }
+}
+
+async function loadApplyMode() {
+  try {
+    const res = await fetch('/api/config');
+    const cfg = await res.json();
+    const mode = (cfg.bot && cfg.bot.apply_mode) || 'full_auto';
+    const sel = document.getElementById('apply-mode-select');
+    if (sel) sel.value = mode;
+  } catch { }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   REVIEW CARD
+   ═══════════════════════════════════════════════════════════════ */
+function showReviewCard(evt) {
+  const card = document.getElementById('review-card');
+  document.getElementById('review-job-title').textContent =
+    (evt.job_title || 'Unknown') + ' at ' + (evt.company || 'Unknown');
+  document.getElementById('review-platform').textContent = evt.platform || '';
+  document.getElementById('review-score').textContent = evt.match_score || '--';
+  document.getElementById('review-cover-letter').value = evt.cover_letter || '';
+  // Store apply URL for manual submit
+  card.dataset.applyUrl = evt.apply_url || '';
+  const manualBtn = document.getElementById('review-manual-submit');
+  if (manualBtn) manualBtn.classList.toggle('hidden', !evt.apply_url);
+  card.classList.remove('hidden');
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function hideReviewCard() {
+  document.getElementById('review-card').classList.add('hidden');
+}
+
+async function reviewApprove() {
+  try {
+    await fetch('/api/bot/review/approve', { method: 'POST' });
+    hideReviewCard();
+  } catch (e) {
+    console.warn('Review approve error:', e);
+  }
+}
+
+async function reviewEdit() {
+  const coverLetter = document.getElementById('review-cover-letter').value;
+  try {
+    await fetch('/api/bot/review/edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cover_letter: coverLetter }),
+    });
+    hideReviewCard();
+  } catch (e) {
+    console.warn('Review edit error:', e);
+  }
+}
+
+async function reviewManualSubmit() {
+  // Open the job URL so the user can apply themselves
+  const card = document.getElementById('review-card');
+  const url = card.dataset.applyUrl;
+  if (url) window.open(url, '_blank');
+  // Tell the bot to save this as manual_required and move on
+  try {
+    await fetch('/api/bot/review/manual', { method: 'POST' });
+    hideReviewCard();
+  } catch (e) {
+    console.warn('Review manual error:', e);
+  }
+}
+
+async function reviewSkip() {
+  try {
+    await fetch('/api/bot/review/skip', { method: 'POST' });
+    hideReviewCard();
+  } catch (e) {
+    console.warn('Review skip error:', e);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ANALYTICS CHARTS
+   ═══════════════════════════════════════════════════════════════ */
+let chartInstances = {};
+
+async function loadAnalytics() {
+  try {
+    const [summaryRes, dailyRes] = await Promise.all([
+      fetch('/api/analytics/summary'),
+      fetch('/api/analytics/daily?days=30'),
+    ]);
+    const summary = await summaryRes.json();
+    const daily = await dailyRes.json();
+
+    renderDailyChart(daily);
+    renderStatusChart(summary.by_status || {});
+    renderPlatformChart(summary.by_platform || {});
+  } catch (e) {
+    console.warn('Could not load analytics:', e);
+  }
+}
+
+function renderDailyChart(data) {
+  const ctx = document.getElementById('chart-daily');
+  if (!ctx) return;
+  if (chartInstances.daily) chartInstances.daily.destroy();
+  chartInstances.daily = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: data.map(d => d.date),
+      datasets: [{
+        label: 'Applications',
+        data: data.map(d => d.count),
+        borderColor: '#4da6ff',
+        backgroundColor: 'rgba(77,166,255,.1)',
+        tension: 0.4,
+        fill: true,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#8892a4', maxTicksLimit: 10 }, grid: { color: 'rgba(255,255,255,.05)' } },
+        y: { ticks: { color: '#8892a4', stepSize: 1 }, grid: { color: 'rgba(255,255,255,.05)' }, beginAtZero: true },
+      },
+    },
+  });
+}
+
+function renderStatusChart(byStatus) {
+  const ctx = document.getElementById('chart-status');
+  if (!ctx) return;
+  if (chartInstances.status) chartInstances.status.destroy();
+  const labels = Object.keys(byStatus);
+  const values = Object.values(byStatus);
+  const colors = labels.map(s => {
+    if (s === 'applied') return '#4da6ff';
+    if (s === 'interview') return '#53d769';
+    if (s === 'offer') return '#ffc107';
+    if (s === 'rejected') return '#e94560';
+    if (s === 'error') return '#ff6b6b';
+    return '#8892a4';
+  });
+  chartInstances.status = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: labels.map(s => s.charAt(0).toUpperCase() + s.slice(1)),
+      datasets: [{ data: values, backgroundColor: colors, borderWidth: 0 }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { color: '#8892a4', padding: 12 } },
+      },
+    },
+  });
+}
+
+function renderPlatformChart(byPlatform) {
+  const ctx = document.getElementById('chart-platform');
+  if (!ctx) return;
+  if (chartInstances.platform) chartInstances.platform.destroy();
+  chartInstances.platform = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: Object.keys(byPlatform).map(s => s.charAt(0).toUpperCase() + s.slice(1)),
+      datasets: [{
+        label: 'Applications',
+        data: Object.values(byPlatform),
+        backgroundColor: '#4da6ff',
+        borderRadius: 6,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#8892a4' }, grid: { display: false } },
+        y: { ticks: { color: '#8892a4', stepSize: 1 }, grid: { color: 'rgba(255,255,255,.05)' }, beginAtZero: true },
+      },
+    },
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   CLAUDE CODE STATUS
+   ═══════════════════════════════════════════════════════════════ */
+function updateClaudeIndicators() {
+  const cls = state.claudeAvailable ? 'dot dot-green' : 'dot dot-yellow';
+  const txt = state.claudeAvailable ? 'Claude Code' : 'Claude Code (unavailable)';
+  document.querySelectorAll('#nav-claude-indicator, #profile-claude-indicator').forEach(el => {
+    const dot = el.querySelector('.dot');
+    const span = el.querySelector('span:last-child');
+    if (dot) dot.className = cls;
+    if (span) span.textContent = txt;
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   MODALS
+   ═══════════════════════════════════════════════════════════════ */
+function closeModal(id) {
+  document.getElementById(id).classList.add('hidden');
+}
+
+// Close modals on overlay click
+document.addEventListener('click', e => {
+  if (e.target.classList.contains('modal-overlay')) {
+    e.target.classList.add('hidden');
+  }
+});
+
+// Close modals on Escape
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-overlay:not(.hidden)').forEach(m => m.classList.add('hidden'));
+  }
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   HELPERS
+   ═══════════════════════════════════════════════════════════════ */
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+function escAttr(s) {
+  return String(s).replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+</script>
+</body>
+</html>

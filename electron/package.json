@@ -1,0 +1,63 @@
+{
+  "name": "autoapply",
+  "version": "1.0.0",
+  "description": "AutoApply — Automated Job Application Platform",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux",
+    "dist:all": "electron-builder --win --mac --linux"
+  },
+  "author": "AutoApply",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.autoapply.desktop",
+    "productName": "AutoApply",
+    "directories": {
+      "output": "build"
+    },
+    "extraResources": [
+      {
+        "from": "../",
+        "to": "python-backend",
+        "filter": [
+          "app.py",
+          "run.py",
+          "setup.py",
+          "requirements.txt",
+          "config/**/*",
+          "bot/**/*",
+          "core/**/*",
+          "db/**/*",
+          "templates/**/*",
+          "!**/__pycache__/**",
+          "!**/*.pyc"
+        ]
+      }
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "icons/icon.ico"
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "icons/icon.icns",
+      "category": "public.app-category.productivity"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "icons/icon.png",
+      "category": "Office"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
