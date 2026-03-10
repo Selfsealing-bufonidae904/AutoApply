@@ -55,15 +55,15 @@ A native app window opens with the dashboard.
 
 On first launch, a wizard walks you through 7 steps:
 
-1. **Personal Info** — Name, email, phone, location, bio
-2. **Online Presence** — LinkedIn URL, portfolio URL (both optional)
-3. **Job Preferences** — Job titles you're targeting, preferred locations, remote preference
-4. **Filters** — Minimum salary, keywords to include or exclude
-5. **Experience Level** — Mid, senior, staff, etc.
-6. **Bot Settings** — Which platforms to scan, daily limit, timing
-7. **Blacklist** — Companies you want to skip
+1. **Personal Info** — Name, email, phone, address, bio, LinkedIn/portfolio URLs. Includes a collapsible **Application Answers** section for screening questions (work authorization, visa sponsorship, years of experience, salary, relocation, start date).
+2. **Job Preferences** — Job titles you're targeting, preferred locations, remote preference
+3. **Filters** — Minimum salary, keywords to include or exclude
+4. **Experience Level** — Mid, senior, staff, etc.
+5. **Fallback Resume** — Upload a PDF resume for when Claude Code isn't available
+6. **Platform Login** — Log into LinkedIn and/or Indeed
+7. **Done** — Summary and go to dashboard
 
-Everything is editable later in the Settings tab.
+Everything is editable later in the Settings tab. The full set of Application Answers (including EEO disclosures) is available in **Settings → Application Answers**.
 
 ## Log Into Your Job Platforms
 

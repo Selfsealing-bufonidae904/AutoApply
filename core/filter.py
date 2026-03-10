@@ -33,6 +33,7 @@ ATS_FINGERPRINTS = {
     "greenhouse.io": "greenhouse",
     "lever.co": "lever",
     "myworkdayjobs.com": "workday",
+    "ashbyhq.com": "ashby",
     "taleo.net": "taleo",
     "icims.com": "icims",
     "linkedin.com/jobs": "linkedin",

@@ -219,6 +219,28 @@ PUT merges your changes with existing config — you only need to send the field
 }
 ```
 
+**Example** — set application screening answers:
+```json
+{
+  "profile": {
+    "screening_answers": {
+      "work_authorization": "Yes",
+      "visa_sponsorship": "No",
+      "years_experience": "5",
+      "desired_salary": "150000",
+      "willing_to_relocate": "Yes",
+      "start_date": "Immediately",
+      "gender": "Decline to Self Identify",
+      "ethnicity": "Decline to Self Identify",
+      "veteran_status": "I am not a veteran",
+      "disability_status": "I don't wish to answer"
+    }
+  }
+}
+```
+
+Screening answers are used by the Workday and Ashby appliers to pre-fill common application questions. All fields are optional — omitted fields are left blank on the application form.
+
 ## Feed Events
 
 | Method | Endpoint | Description |

@@ -13,7 +13,7 @@ Follow these in order:
 | Guide | What it covers |
 |-------|----------------|
 | [Setup & Installation](guides/setup.md) | Installing, first launch, setup wizard, logging into LinkedIn/Indeed |
-| [How the Bot Works](guides/how-the-bot-works.md) | Job searching, scoring, applying, scheduling, review mode, supported platforms |
+| [How the Bot Works](guides/how-the-bot-works.md) | Job searching, scoring, applying, scheduling, review mode, supported platforms (LinkedIn, Indeed, Greenhouse, Lever, Workday, Ashby) |
 | [Writing Experience Files](guides/experience-files.md) | How to write `.txt` files that produce great AI-tailored resumes |
 | [How AI Generation Works](guides/ai-generation.md) | What Claude Code does with your experience files and job descriptions |
 

@@ -51,7 +51,7 @@ AutoApply fills out the application form automatically:
 
 If it hits a CAPTCHA, it stops and logs the error — it won't try to solve CAPTCHAs.
 
-If the job redirects to an unsupported application system (like Workday, Taleo, or iCIMS), it marks the job as "manual required." AutoApply can automate LinkedIn Easy Apply, Indeed Quick Apply, Greenhouse, and Lever forms.
+If the job redirects to an unsupported application system (like Taleo or iCIMS), it marks the job as "manual required." AutoApply can automate LinkedIn Easy Apply, Indeed Quick Apply, Greenhouse, Lever, Workday, and Ashby forms.
 
 ### 5. Save and Repeat
 
@@ -74,10 +74,18 @@ After finishing a search cycle, the bot waits for your configured **search inter
 | **Indeed** | Quick Apply jobs (the "Apply now" button) | Jobs that redirect to company websites |
 | **Greenhouse** | Standard application forms on `boards.greenhouse.io` | Custom question types beyond text fields |
 | **Lever** | Application forms on `jobs.lever.co` | Custom question types beyond text fields |
+| **Workday** | Multi-step applications on `*.myworkdayjobs.com` — personal info, resume upload, screening questions, EEO disclosures, and submission | Account creation requiring email verification, complex custom question types |
+| **Ashby** | Application forms on `jobs.ashbyhq.com` (used by OpenAI, YC startups) — personal info, resume, cover letter, custom questions | Complex multi-part assessments |
 
-Greenhouse and Lever jobs are detected automatically by URL — when a LinkedIn or Indeed listing links to a Greenhouse or Lever application page, AutoApply uses the correct form-filling strategy.
+All ATS platforms are detected automatically by URL — when a LinkedIn or Indeed listing links to a supported application page, AutoApply uses the correct form-filling strategy.
 
-Jobs that require applying on an unsupported ATS (Workday, Taleo, iCIMS, etc.) are logged as "manual required" so you can apply to them yourself.
+Jobs that require applying on an unsupported ATS (Taleo, iCIMS, etc.) are logged as "manual required" so you can apply to them yourself.
+
+### Application Answers
+
+Workday, Ashby, and other portals often ask screening questions during the application (work authorization, visa sponsorship, years of experience, etc.). AutoApply pre-fills these from your **Application Answers** in Settings.
+
+To get the best results, fill out the Application Answers section in **Settings → Application Answers** before running the bot. The bot matches question labels to your saved answers and fills them automatically. See [Configuration](configuration.md#application-answers) for the full list of supported fields.
 
 ## Live Feed
 

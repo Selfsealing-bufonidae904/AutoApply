@@ -31,6 +31,32 @@ What jobs AutoApply looks for.
 | Exclude keywords | Skip jobs containing these words (e.g., "junior", "intern") |
 | Experience levels | Target levels: "mid", "senior", "staff", etc. |
 
+## Application Answers
+
+Pre-filled answers for common screening questions on Workday, Ashby, and other portals. These are stored in `profile.screening_answers` and used automatically when the bot encounters matching questions.
+
+| Setting | Description |
+|---------|-------------|
+| Work Authorization | Whether you're authorized to work in the target country (Yes/No) |
+| Visa Sponsorship | Whether you need visa sponsorship (Yes/No) |
+| Years of Experience | Total years of professional experience (e.g., "5") |
+| Desired Salary | Target annual salary (e.g., "150000") |
+| Willing to Relocate | Whether you'd relocate for a role (Yes/No) |
+| Earliest Start Date | When you can start (e.g., "Immediately", "2 weeks") |
+
+### EEO / Voluntary Disclosures (optional)
+
+These are used for Equal Employment Opportunity forms on Workday and similar portals. All fields are optional — if left blank, the bot skips them.
+
+| Setting | Description |
+|---------|-------------|
+| Gender | Your gender identity |
+| Ethnicity | Your ethnic background |
+| Veteran Status | Whether you're a veteran |
+| Disability Status | Disability self-identification |
+
+Application answers are configured in **Settings → Application Answers**. During the setup wizard, the core 6 fields (work auth through start date) are available in a collapsible section on the Profile step.
+
 ## Bot Settings
 
 How the automation runs.

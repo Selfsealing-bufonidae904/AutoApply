@@ -74,15 +74,23 @@ The bot can't solve CAPTCHAs. This usually happens when:
 
 ## "Manual required" applications
 
-These are jobs that redirect to an application system AutoApply can't automate (Workday, Taleo, iCIMS, etc.).
+These are jobs that redirect to an application system AutoApply can't automate (Taleo, iCIMS, custom company portals, etc.).
 
 AutoApply **can** automate:
 - LinkedIn Easy Apply
 - Indeed Quick Apply
 - Greenhouse forms (`boards.greenhouse.io`)
 - Lever forms (`jobs.lever.co`)
+- Workday forms (`*.myworkdayjobs.com`)
+- Ashby forms (`jobs.ashbyhq.com`)
 
 Jobs on unsupported systems are saved in the Applications tab with the apply URL so you can submit them yourself.
+
+## Workday applications failing
+
+- **Fill out Application Answers first** — Workday asks many screening questions. Go to **Settings → Application Answers** and fill in work authorization, visa sponsorship, years of experience, etc.
+- **Account creation**: If the Workday portal requires creating an account, the bot attempts to sign in with your email. Some portals require email verification which the bot cannot complete — these are marked as manual required.
+- **Dropdown selections not matching**: Workday dropdown values must match exactly. If your state or country selection isn't working, check that the value in your profile matches what Workday expects (e.g., "California" not "CA").
 
 ## Bot stops unexpectedly
 

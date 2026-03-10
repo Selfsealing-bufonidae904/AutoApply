@@ -6,6 +6,29 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-03-10
+
+Workday & Ashby ATS Support + Application Answers UI.
+
+### Added
+- **Workday applier** (`bot/apply/workday.py`): Multi-step form automation for Workday ATS (`*.myworkdayjobs.com`). Handles Apply button, account sign-in, My Information (name, phone, address, country/state dropdowns), My Experience (resume upload), Application Questions (cover letter, screening answers), Voluntary Disclosures (EEO), Self-Identification, and final submission. Uses `data-automation-id` selectors throughout. (FR-070)
+- **Ashby applier** (`bot/apply/ashby.py`): Single-page form automation for Ashby ATS (`jobs.ashbyhq.com`, used by OpenAI, YC startups). Fills name, email, phone, LinkedIn, portfolio, location, uploads resume, fills cover letter, and answers custom questions via label matching. (FR-071)
+- **ATS pipeline registration**: Workday and Ashby appliers registered in `APPLIERS` dict. Jobs with `myworkdayjobs.com` or `ashbyhq.com` URLs are automatically routed to the correct applier. (FR-072)
+- **Application Answers UI** (Settings): New "Application Answers" section between Job Preferences and Platform Login. Collects work authorization, visa sponsorship, years of experience, desired salary, willingness to relocate, earliest start date. Collapsible EEO section for gender, ethnicity, veteran status, disability status. (FR-073)
+- **Application Answers UI** (Wizard): Collapsible "Application Answers (recommended)" section in the Profile step with the 6 core screening fields. (FR-073)
+- **Screening answers persistence**: `loadSettings()` and `saveSettings()` now read/write `screening_answers` dict. `wizardFinish()` collects wizard screening answers. All data stored in `profile.screening_answers` in `config.json`. (FR-073)
+- **Ashby ATS fingerprint**: Added `ashbyhq.com` to `ATS_FINGERPRINTS` in `core/filter.py`. (FR-072)
+
+### Changed
+- `bot/bot.py` APPLIERS dict expanded from 4 to 6 entries (added Workday, Ashby).
+- `core/filter.py` ATS_FINGERPRINTS expanded from 8 to 9 entries (added `ashbyhq.com`).
+
+### Security
+- Workday and Ashby appliers use same human-like interaction delays as existing appliers. (NFR-024)
+- CAPTCHA detection on both Workday and Ashby forms. (NFR-025)
+- Workday dropdown interaction uses `aria-haspopup="listbox"` pattern, avoiding fragile CSS selectors. (NFR-028)
+- EEO data stored locally in `config.json` only — never transmitted to external services. (NFR-020)
+
 ## [1.7.2] - 2026-03-10
 
 ### Added

@@ -8,10 +8,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from bot.apply.base import ApplyResult
+from bot.apply.ashby import AshbyApplier
 from bot.apply.greenhouse import GreenhouseApplier
 from bot.apply.indeed import IndeedApplier
 from bot.apply.lever import LeverApplier
 from bot.apply.linkedin import LinkedInApplier
+from bot.apply.workday import WorkdayApplier
 from bot.browser import BrowserManager
 from bot.search.indeed import IndeedSearcher
 from bot.search.linkedin import LinkedInSearcher
@@ -34,6 +36,8 @@ APPLIERS = {
     "indeed": IndeedApplier,
     "greenhouse": GreenhouseApplier,
     "lever": LeverApplier,
+    "workday": WorkdayApplier,
+    "ashby": AshbyApplier,
 }
 
 

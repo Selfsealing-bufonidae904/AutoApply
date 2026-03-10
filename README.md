@@ -15,7 +15,7 @@ AutoApply searches LinkedIn and Indeed, scores each job against your preferences
 - **Multi-platform search** — LinkedIn and Indeed, with configurable job titles, locations, and keywords
 - **Smart scoring** — Each job scored 0–100 based on title match, salary, location, experience level, and keyword relevance
 - **AI-powered documents** — Generates tailored resumes (PDF) and cover letters per job using [Claude Code](https://docs.anthropic.com/en/docs/claude-code)
-- **Automated applications** — Fills forms, uploads documents, and submits on LinkedIn Easy Apply, Indeed Quick Apply, Greenhouse, and Lever
+- **Automated applications** — Fills forms, uploads documents, and submits on LinkedIn Easy Apply, Indeed Quick Apply, Greenhouse, Lever, Workday, and Ashby
 - **Review mode** — Optionally review each application before it's submitted
 - **Dashboard** — Real-time live feed, application history, analytics, CSV export
 - **Desktop app** — Electron shell with system tray support (minimize to tray, runs in background)
@@ -68,6 +68,7 @@ npx electron .
   Configurable        Min score gate       Tailored per job     LinkedIn Easy Apply
   titles, locations,  + keyword filters    with your experience Indeed Quick Apply
   salary, keywords                         files as context     Greenhouse, Lever
+                                                                Workday, Ashby
 ```
 
 1. **Search** — Playwright-based scrapers find jobs on enabled platforms
@@ -88,6 +89,7 @@ All settings are managed through the dashboard UI. Key options:
 | **Min Match Score** | Only apply to jobs scoring above this threshold (default: 75) |
 | **Apply Mode** | `full_auto` (hands-free), `review` (approve each), or `watch` (observe only) |
 | **Max Applications/Day** | Daily cap to avoid rate limiting (default: 50) |
+| **Application Answers** | Pre-fill screening questions (work auth, visa, experience, salary, EEO) |
 | **Schedule** | Days and hours for automatic operation |
 | **Company Blacklist** | Companies to always skip |
 
@@ -108,7 +110,7 @@ AutoApply/
 │   ├── bot.py              # Main bot loop (search → filter → generate → apply)
 │   ├── browser.py          # Playwright browser manager
 │   ├── search/             # LinkedIn and Indeed scrapers
-│   └── apply/              # Platform-specific appliers (LinkedIn, Indeed, Greenhouse, Lever)
+│   └── apply/              # Platform-specific appliers (LinkedIn, Indeed, Greenhouse, Lever, Workday, Ashby)
 ├── templates/index.html    # Single-page dashboard (vanilla JS)
 ├── electron/               # Electron desktop shell
 │   ├── main.js             # App window, tray, lifecycle
@@ -172,7 +174,7 @@ python -m pytest tests/ -v
 
 > **This software is provided for educational and personal-use purposes only.**
 >
-> - AutoApply automates interactions with third-party platforms (LinkedIn, Indeed, Greenhouse, Lever). **Using automated tools may violate the Terms of Service of these platforms.** You are solely responsible for ensuring your use complies with all applicable terms, policies, and laws.
+> - AutoApply automates interactions with third-party platforms (LinkedIn, Indeed, Greenhouse, Lever, Workday, Ashby). **Using automated tools may violate the Terms of Service of these platforms.** You are solely responsible for ensuring your use complies with all applicable terms, policies, and laws.
 > - The authors and contributors are **not responsible** for any consequences arising from the use of this software, including but not limited to: account suspension or termination, legal action from platform providers, rejected or misattributed job applications, or any other damages.
 > - This software is provided **"as is"** without warranty of any kind. Use it **at your own risk**.
 > - The authors do not endorse or encourage violation of any platform's Terms of Service.

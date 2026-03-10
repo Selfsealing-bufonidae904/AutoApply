@@ -940,6 +940,50 @@ tr.clickable-row:hover td { background: rgba(255,255,255,.03); }
             <input type="url" class="form-control" id="wiz-portfolio" placeholder="https://...">
           </div>
         </div>
+        <details style="margin-top:4px;">
+          <summary style="cursor:pointer; font-weight:600; font-size:.9rem; color:var(--primary);">Application Answers (recommended)</summary>
+          <p style="color:var(--text-dim); font-size:.82rem; margin:8px 0 12px;">
+            Pre-fill answers for common screening questions on Workday, Ashby, and other portals.
+          </p>
+          <div class="settings-grid">
+            <div class="form-group">
+              <label>Work Authorization</label>
+              <select class="form-control" id="wiz-work-authorization">
+                <option value="">— Select —</option>
+                <option value="Yes">Yes — authorized to work</option>
+                <option value="No">No — not authorized</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Visa Sponsorship Needed?</label>
+              <select class="form-control" id="wiz-visa-sponsorship">
+                <option value="">— Select —</option>
+                <option value="Yes">Yes — need sponsorship</option>
+                <option value="No">No — don't need sponsorship</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Years of Experience</label>
+              <input type="text" class="form-control" id="wiz-years-experience" placeholder="e.g. 5">
+            </div>
+            <div class="form-group">
+              <label>Desired Salary</label>
+              <input type="text" class="form-control" id="wiz-desired-salary" placeholder="e.g. 150000">
+            </div>
+            <div class="form-group">
+              <label>Willing to Relocate?</label>
+              <select class="form-control" id="wiz-willing-relocate">
+                <option value="">— Select —</option>
+                <option value="Yes">Yes</option>
+                <option value="No">No</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Earliest Start Date</label>
+              <input type="text" class="form-control" id="wiz-start-date" placeholder="e.g. Immediately, 2 weeks">
+            </div>
+          </div>
+        </details>
       </div>
       <div class="wizard-nav">
         <button class="btn btn-ghost" onclick="wizardPrev()">Back</button>
@@ -1433,6 +1477,97 @@ tr.clickable-row:hover td { background: rgba(255,255,255,.03); }
             <label><input type="checkbox" value="lead" class="set-exp-level"><span>Lead</span></label>
           </div>
         </div>
+
+        <hr style="border:none; border-top:1px solid var(--border); margin:8px 0;">
+        <h3>Application Answers</h3>
+        <p style="color:var(--text-dim); font-size:.85rem; margin-bottom:12px;">
+          Pre-fill answers for common application questions (Workday, Ashby, etc.). These are used automatically when the bot encounters matching questions.
+        </p>
+        <div class="settings-grid">
+          <div class="form-group">
+            <label>Work Authorization</label>
+            <select class="form-control" id="set-work-authorization">
+              <option value="">— Select —</option>
+              <option value="Yes">Yes — authorized to work</option>
+              <option value="No">No — not authorized</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Visa Sponsorship Needed?</label>
+            <select class="form-control" id="set-visa-sponsorship">
+              <option value="">— Select —</option>
+              <option value="Yes">Yes — need sponsorship</option>
+              <option value="No">No — don't need sponsorship</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Years of Experience</label>
+            <input type="text" class="form-control" id="set-years-experience" placeholder="e.g. 5">
+          </div>
+          <div class="form-group">
+            <label>Desired Salary</label>
+            <input type="text" class="form-control" id="set-desired-salary" placeholder="e.g. 150000">
+          </div>
+          <div class="form-group">
+            <label>Willing to Relocate?</label>
+            <select class="form-control" id="set-willing-relocate">
+              <option value="">— Select —</option>
+              <option value="Yes">Yes</option>
+              <option value="No">No</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Earliest Start Date</label>
+            <input type="text" class="form-control" id="set-start-date" placeholder="e.g. Immediately, 2 weeks">
+          </div>
+        </div>
+        <details style="margin-top:8px;">
+          <summary style="cursor:pointer; font-weight:600; font-size:.9rem; color:var(--text-dim);">EEO / Voluntary Disclosures (optional)</summary>
+          <div class="settings-grid" style="margin-top:8px;">
+            <div class="form-group">
+              <label>Gender</label>
+              <select class="form-control" id="set-eeo-gender">
+                <option value="">— Prefer not to say —</option>
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Non-Binary">Non-Binary</option>
+                <option value="Decline to Self Identify">Decline to Self Identify</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Ethnicity</label>
+              <select class="form-control" id="set-eeo-ethnicity">
+                <option value="">— Prefer not to say —</option>
+                <option value="Hispanic or Latino">Hispanic or Latino</option>
+                <option value="White">White (Not Hispanic or Latino)</option>
+                <option value="Black or African American">Black or African American</option>
+                <option value="Asian">Asian</option>
+                <option value="Native Hawaiian or Other Pacific Islander">Native Hawaiian or Pacific Islander</option>
+                <option value="American Indian or Alaska Native">American Indian or Alaska Native</option>
+                <option value="Two or More Races">Two or More Races</option>
+                <option value="Decline to Self Identify">Decline to Self Identify</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Veteran Status</label>
+              <select class="form-control" id="set-eeo-veteran">
+                <option value="">— Prefer not to say —</option>
+                <option value="I am a veteran">I am a veteran</option>
+                <option value="I am not a veteran">I am not a veteran</option>
+                <option value="Decline to Self Identify">Decline to Self Identify</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Disability Status</label>
+              <select class="form-control" id="set-eeo-disability">
+                <option value="">— Prefer not to say —</option>
+                <option value="Yes, I have a disability">Yes, I have a disability</option>
+                <option value="No, I don't have a disability">No, I don't have a disability</option>
+                <option value="I don't wish to answer">I don't wish to answer</option>
+              </select>
+            </div>
+          </div>
+        </details>
 
         <hr style="border:none; border-top:1px solid var(--border); margin:8px 0;">
         <h3>Platform Login</h3>
@@ -1972,6 +2107,7 @@ async function wizardFinish() {
       bio:                document.getElementById('wiz-bio').value,
       linkedin_url:       document.getElementById('wiz-linkedin').value,
       portfolio_url:      document.getElementById('wiz-portfolio').value,
+      screening_answers:  _collectWizardScreeningAnswers(),
     },
     search_criteria: {
       job_titles:        state.tagInputs['wiz-titles-tags'] || [],
@@ -2526,6 +2662,19 @@ async function loadSettings() {
     document.getElementById('set-linkedin').value   = p.linkedin_url || '';
     document.getElementById('set-portfolio').value  = p.portfolio_url || '';
 
+    // Screening answers
+    const sa = p.screening_answers || {};
+    document.getElementById('set-work-authorization').value = sa.work_authorization || '';
+    document.getElementById('set-visa-sponsorship').value   = sa.visa_sponsorship || '';
+    document.getElementById('set-years-experience').value   = sa.years_experience || '';
+    document.getElementById('set-desired-salary').value     = sa.desired_salary || '';
+    document.getElementById('set-willing-relocate').value   = sa.willing_to_relocate || '';
+    document.getElementById('set-start-date').value         = sa.start_date || '';
+    document.getElementById('set-eeo-gender').value         = sa.gender || '';
+    document.getElementById('set-eeo-ethnicity').value      = sa.ethnicity || '';
+    document.getElementById('set-eeo-veteran').value        = sa.veteran_status || '';
+    document.getElementById('set-eeo-disability').value     = sa.disability_status || '';
+
     setTags('set-titles-tags',    pr.job_titles || []);
     setTags('set-locations-tags', pr.locations || []);
     document.getElementById('set-remote').checked = !!pr.remote_only;
@@ -2551,6 +2700,44 @@ async function loadSettings() {
   } catch { }
 }
 
+function _collectWizardScreeningAnswers() {
+  const ans = {};
+  const fields = {
+    'wiz-work-authorization': 'work_authorization',
+    'wiz-visa-sponsorship':   'visa_sponsorship',
+    'wiz-years-experience':   'years_experience',
+    'wiz-desired-salary':     'desired_salary',
+    'wiz-willing-relocate':   'willing_to_relocate',
+    'wiz-start-date':         'start_date',
+  };
+  for (const [id, key] of Object.entries(fields)) {
+    const el = document.getElementById(id);
+    if (el && el.value) ans[key] = el.value;
+  }
+  return ans;
+}
+
+function _collectScreeningAnswers() {
+  const ans = {};
+  const fields = {
+    'set-work-authorization': 'work_authorization',
+    'set-visa-sponsorship':   'visa_sponsorship',
+    'set-years-experience':   'years_experience',
+    'set-desired-salary':     'desired_salary',
+    'set-willing-relocate':   'willing_to_relocate',
+    'set-start-date':         'start_date',
+    'set-eeo-gender':         'gender',
+    'set-eeo-ethnicity':      'ethnicity',
+    'set-eeo-veteran':        'veteran_status',
+    'set-eeo-disability':     'disability_status',
+  };
+  for (const [id, key] of Object.entries(fields)) {
+    const val = document.getElementById(id).value;
+    if (val) ans[key] = val;
+  }
+  return ans;
+}
+
 async function saveSettings() {
   const config = {
     profile: {
@@ -2568,6 +2755,7 @@ async function saveSettings() {
       bio:                document.getElementById('set-bio').value,
       linkedin_url:       document.getElementById('set-linkedin').value,
       portfolio_url:      document.getElementById('set-portfolio').value,
+      screening_answers:  _collectScreeningAnswers(),
     },
     search_criteria: {
       job_titles:        state.tagInputs['set-titles-tags'] || [],
