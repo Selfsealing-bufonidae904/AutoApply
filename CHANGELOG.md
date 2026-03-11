@@ -64,9 +64,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **Localized placeholders**: Spanish example data (e.g., "María García", "Madrid", "+34")
   - **8 new tests**: File validation, key parity, no-extra-keys, untranslated spot check, placeholder preservation, API integration
   - **End-to-end**: Locale switcher dropdown now shows "English" and "Español"
+- **Frontend Rendering Tests (TASK-024, #13)**: 32 new tests validating DOM rendering for 6 previously untested requirements.
+  - **FR-012**: SocketIO script, feed container, bot status, stat counters
+  - **FR-014**: Dashboard screen, bot controls, stats panel, mode selector, activity feed
+  - **FR-017**: Settings screen, all profile fields, save button, locale dropdown
+  - **FR-039**: AI warning banner existence and content
+  - **FR-064**: Schedule toggle, 7 day checkboxes, time inputs, status badge
+  - **FR-077**: LLM provider/model/key inputs, provider options, validate button
+  - **Accessibility**: HTML lang, skip-to-content, main/nav landmarks, ARIA labels
+  - **Traceability**: 6 items upgraded from ⚠️ to ✅ (FR-012, FR-014, FR-017, FR-039, FR-064, FR-077)
 
 ### Changed
-- **Traceability matrix v7.0**: Added 7 rows for TASK-022 (FR-131 to FR-134, NFR-022-01 to NFR-022-03)
+- **Traceability matrix v8.0**: 6 items upgraded ⚠️→✅ (TASK-024), added rows for TASK-022 and TASK-023
 - **CLAUDE.md v4.2**: Added principle #9 (GitHub Issues for every implementation), lesson 12.8 (issue lifecycle)
 
 ## [1.9.0] - 2026-03-11
