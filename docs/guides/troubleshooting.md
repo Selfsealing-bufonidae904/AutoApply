@@ -16,7 +16,7 @@ AutoApply works without an API key — it just uses generic templates instead of
 ## App won't start
 
 **Check Python is running**:
-- Make sure you ran `python setup.py` with your virtual environment activated
+- Make sure you ran `python setup_env.py` with your virtual environment activated
 - Check `~/.autoapply/backend.log` for error messages
 
 **Port conflict**:
@@ -33,7 +33,7 @@ venv\Scripts\activate
 # macOS/Linux:
 source venv/bin/activate
 
-python setup.py
+python setup_env.py
 ```
 
 ## Login button does nothing / browser doesn't open

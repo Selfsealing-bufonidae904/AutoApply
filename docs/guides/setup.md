@@ -19,7 +19,7 @@ venv\Scripts\activate
 # macOS/Linux:
 source venv/bin/activate
 
-python setup.py
+python setup_env.py
 
 # Install Playwright's Chromium browser (required for job searching/applying)
 playwright install chromium

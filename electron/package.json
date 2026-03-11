@@ -12,6 +12,10 @@
     "dist:all": "npm run prebuild && electron-builder --win --mac --linux",
     "icons:generate": "node scripts/generate-icon.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/AbhishekMandapmalvi/AutoApply.git"
+  },
   "author": "AutoApply",
   "license": "MIT",
   "devDependencies": {

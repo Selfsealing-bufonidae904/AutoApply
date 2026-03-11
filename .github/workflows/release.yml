@@ -14,15 +14,15 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            dist_cmd: dist:win
+            platform_flag: '--win'
             artifact_glob: 'electron/build/*.exe'
             artifact_name: installer-windows
           - os: macos-latest
-            dist_cmd: dist:mac
+            platform_flag: '--mac'
             artifact_glob: 'electron/build/*.dmg'
             artifact_name: installer-macos
           - os: ubuntu-latest
-            dist_cmd: dist:linux
+            platform_flag: '--linux'
             artifact_glob: 'electron/build/*.AppImage'
             artifact_name: installer-linux
 
@@ -54,7 +54,7 @@ jobs:
 
       - name: Build installer
         working-directory: electron
-        run: npx electron-builder --publish never
+        run: npx electron-builder ${{ matrix.platform_flag }} --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

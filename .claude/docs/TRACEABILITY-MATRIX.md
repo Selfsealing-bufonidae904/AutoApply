@@ -22,7 +22,7 @@
 
 | Req ID | Title | Design Ref | Source Files | Tests | Status |
 |--------|-------|------------|-------------|-------|--------|
-| FR-001 | Cross-Platform Setup Script | SAD-TASK-001 | `config/settings.py`, `setup.py` | `tests/test_settings.py`, `tests/test_coverage_boost.py` | ✅ |
+| FR-001 | Cross-Platform Setup Script | SAD-TASK-001 | `config/settings.py`, `setup_env.py` | `tests/test_settings.py`, `tests/test_coverage_boost.py` | ✅ |
 | FR-002 | Application Entry Point | SAD-TASK-001 | `run.py` | `tests/test_run.py` | ✅ |
 | FR-003 | Configuration Models and Persistence | SAD-TASK-001 | `config/settings.py` | `tests/test_settings.py`, `tests/test_coverage_boost.py` | ✅ |
 | FR-004 | Database Schema and Operations | SAD-TASK-001 | `db/database.py`, `db/models.py` | `tests/test_database.py` | ✅ |
@@ -182,7 +182,7 @@ Every source file in the project mapped to its requirement(s).
 | `app.py` | FR-082, ME-2, ME-4, ME-8, ME-9, QW-1, QW-2, QW-4 |
 | `app_state.py` | FR-052, FR-082 |
 | `run.py` | FR-002, FR-028, QW-3, ME-8 |
-| `setup.py` | FR-001 |
+| `setup_env.py` | FR-001 |
 | `config/settings.py` | FR-001, FR-003, FR-055, FR-060, FR-072, FR-074, QW-1 |
 | `core/ai_engine.py` | FR-031–FR-036, FR-038, FR-074, FR-076, FR-078, FR-079, QW-2 |
 | `core/filter.py` | FR-044, FR-045, FR-059 |

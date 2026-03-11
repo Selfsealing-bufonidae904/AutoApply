@@ -36,7 +36,7 @@ cd AutoApply
 python -m venv venv
 venv\Scripts\activate        # Windows
 source venv/bin/activate     # macOS/Linux
-python setup.py
+python setup_env.py
 
 # 2. Install Playwright browser (for job searching/applying)
 playwright install chromium
