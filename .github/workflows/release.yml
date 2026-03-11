@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            dist_cmd: dist:win
+            artifact_glob: 'electron/build/*.exe'
+            artifact_name: installer-windows
+          - os: macos-latest
+            dist_cmd: dist:mac
+            artifact_glob: 'electron/build/*.dmg'
+            artifact_name: installer-macos
+          - os: ubuntu-latest
+            dist_cmd: dist:linux
+            artifact_glob: 'electron/build/*.AppImage'
+            artifact_name: installer-linux
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Node dependencies
+        working-directory: electron
+        run: npm ci
+
+      - name: Sync version
+        working-directory: electron
+        run: node scripts/sync-version.js
+
+      - name: Bundle Python runtime
+        working-directory: electron
+        run: node scripts/bundle-python.js
+        timeout-minutes: 15
+
+      - name: Build installer
+        working-directory: electron
+        run: npx electron-builder --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_glob }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: always() && contains(needs.build.result, 'success')
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: List artifacts
+        run: find artifacts -type f | head -20
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/installer-windows/*
+            artifacts/installer-macos/*
+            artifacts/installer-linux/*
+          generate_release_notes: true
+          draft: ${{ contains(needs.build.result, 'failure') }}

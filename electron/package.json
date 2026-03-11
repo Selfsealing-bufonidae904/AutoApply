@@ -1,20 +1,24 @@
 {
   "name": "autoapply",
-  "version": "1.0.0",
+  "version": "1.9.0",
   "description": "AutoApply — Automated Job Application Platform",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "dist:win": "electron-builder --win",
-    "dist:mac": "electron-builder --mac",
-    "dist:linux": "electron-builder --linux",
-    "dist:all": "electron-builder --win --mac --linux"
+    "prebuild": "node scripts/sync-version.js && node scripts/bundle-python.js",
+    "dist:win": "npm run prebuild && electron-builder --win",
+    "dist:mac": "npm run prebuild && electron-builder --mac",
+    "dist:linux": "npm run prebuild && electron-builder --linux",
+    "dist:all": "npm run prebuild && electron-builder --win --mac --linux",
+    "icons:generate": "node scripts/generate-icon.js"
   },
   "author": "AutoApply",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "devDependencies": {
+    "canvas": "^3.2.1",
     "electron": "^33.0.0",
-    "electron-builder": "^25.0.0"
+    "electron-builder": "^25.0.0",
+    "png2icons": "^2.0.1"
   },
   "build": {
     "appId": "com.autoapply.desktop",
@@ -28,16 +32,30 @@
         "to": "python-backend",
         "filter": [
           "app.py",
+          "app_state.py",
           "run.py",
-          "setup.py",
-          "requirements.txt",
+          "pyproject.toml",
           "config/**/*",
           "bot/**/*",
           "core/**/*",
           "db/**/*",
           "templates/**/*",
+          "routes/**/*",
+          "static/**/*",
           "!**/__pycache__/**",
-          "!**/*.pyc"
+          "!**/*.pyc",
+          "!**/tests/**",
+          "!**/venv/**",
+          "!**/.venv/**",
+          "!**/node_modules/**",
+          "!**/.git/**"
+        ]
+      },
+      {
+        "from": "python-runtime",
+        "to": "python-runtime",
+        "filter": [
+          "**/*"
         ]
       }
     ],
@@ -57,7 +75,9 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "icons/icon.ico",
+      "uninstallerIcon": "icons/icon.ico"
     }
   }
 }

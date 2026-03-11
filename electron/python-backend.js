@@ -14,8 +14,23 @@ let logStream = null;
  * @returns {string|null} Path to Python or null if not found.
  */
 function findPython() {
-  // Check for a local virtual environment first (dev mode)
   const isPackaged = app && typeof app.isPackaged !== 'undefined' ? app.isPackaged : false;
+
+  // Priority 1: Bundled Python runtime (packaged mode)
+  if (isPackaged) {
+    const bundledCandidates = process.platform === 'win32'
+      ? [path.join(process.resourcesPath, 'python-runtime', 'python.exe')]
+      : [
+          path.join(process.resourcesPath, 'python-runtime', 'bin', 'python3'),
+          path.join(process.resourcesPath, 'python-runtime', 'bin', 'python'),
+        ];
+    for (const p of bundledCandidates) {
+      if (fs.existsSync(p)) return p;
+    }
+    console.warn('Bundled Python runtime not found, falling back to venv/system Python');
+  }
+
+  // Priority 2: Local virtual environment (dev mode)
   const projectRoot = isPackaged
     ? path.join(process.resourcesPath, 'python-backend')
     : path.join(__dirname, '..');
@@ -222,10 +237,20 @@ async function startBackend(options = {}) {
   const env = { ...process.env };
   env.AUTOAPPLY_PORT = String(backendPort);
 
-  // Share Electron's Chromium with Playwright
-  const chromiumPath = getElectronChromiumPath();
-  if (chromiumPath) {
-    env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = chromiumPath;
+  const isPackaged = app && typeof app.isPackaged !== 'undefined' ? app.isPackaged : false;
+
+  if (isPackaged) {
+    // Set paths for bundled Python runtime
+    env.PLAYWRIGHT_BROWSERS_PATH = path.join(
+      process.resourcesPath, 'python-runtime', 'playwright-browsers'
+    );
+    env.PYTHONPATH = path.join(process.resourcesPath, 'python-backend');
+  } else {
+    // Dev mode: share Electron's Chromium with Playwright
+    const chromiumPath = getElectronChromiumPath();
+    if (chromiumPath) {
+      env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH = chromiumPath;
+    }
   }
 
   const cwd = app.isPackaged

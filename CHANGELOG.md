@@ -10,13 +10,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [1.9.0] - 2026-03-11
 
-Full Frontend i18n Migration — all user-facing strings externalized.
+Distribution Build System + Frontend i18n Migration.
 
 ### Added
 - **Frontend JS i18n migration (QOL-1)**: All 12 JS modules now use `t()` calls from `static/js/i18n.js` instead of hardcoded English strings. ~55 string occurrences migrated across bot-control, applications, settings, profile, login, wizard, feed, review, ai-status, analytics, file-upload, and tag-input modules. (LE-3)
 - **HTML template i18n migration (QOL-2)**: ~200 elements in `templates/index.html` tagged with `data-i18n`, `data-i18n-placeholder`, and `data-i18n-aria-label` attributes. Covers all wizard steps, navbar, dashboard, applications table, profile, analytics, settings (all sections), and modals. (LE-3)
 - **`data-i18n` attribute processor**: Added `_applyDataI18n()` to `static/js/i18n.js` — automatically translates HTML elements on locale load. Supports `data-i18n` (textContent), `data-i18n-placeholder`, `data-i18n-aria-label`, and `data-i18n-title`. (LE-3)
 - **Expanded string catalog**: `static/locales/en.json` grew from 166 to 383 keys across 23 sections. New sections: dashboard, eeo, modal, file_upload, experience_levels (short variants).
+- **Distribution build system (DIST-1 to DIST-6)**: App icon generation (`electron/scripts/generate-icon.js`), version sync script (`electron/scripts/sync-version.js`), Python runtime bundling script (`electron/scripts/bundle-python.js`), updated `electron/package.json` extraResources (added routes/, static/, app_state.py), packaged-mode Python detection in `python-backend.js`, and CI release workflow (`.github/workflows/release.yml`). Run `npm run dist:win` to build a Windows installer. (ADR-018, ADR-019, ADR-020)
 
 ## [1.8.3] - 2026-03-11
 
