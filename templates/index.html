@@ -593,11 +593,31 @@
         <option value="created_at" data-i18n="resumes.col_date">Date</option>
         <option value="company" data-i18n="resumes.col_company">Company</option>
         <option value="match_score" data-i18n="resumes.col_score">Score</option>
+        <option value="is_favorite" data-i18n="resumes.sort_favorites">Favorites first</option>
       </select>
+      <button type="button" id="resume-compare-btn" class="btn btn-secondary" disabled
+              onclick="compareSelected()" data-i18n="resumes.compare">Compare</button>
+      <span id="resume-compare-info" class="text-muted" aria-live="polite"></span>
     </div>
 
     <!-- Resume list -->
     <div id="resume-list" role="region" aria-label="Resume versions list" aria-live="polite">
+    </div>
+
+    <!-- Comparison overlay -->
+    <div id="resume-compare-overlay" class="resume-detail-overlay hidden" role="dialog" aria-label="Resume comparison">
+      <div class="resume-detail-header">
+        <button type="button" class="btn btn-secondary" onclick="closeCompareView()"
+                data-i18n="resumes.back_to_library">Back to Library</button>
+        <h3 data-i18n="resumes.compare_title">Resume Comparison</h3>
+      </div>
+      <div class="diff-legend" role="region" aria-label="Diff legend">
+        <span class="diff-label diff-added-label" data-i18n="resumes.diff_added">Added</span>
+        <span class="diff-label diff-removed-label" data-i18n="resumes.diff_removed">Removed</span>
+        <span class="diff-label diff-unchanged-label" data-i18n="resumes.diff_unchanged">Unchanged</span>
+      </div>
+      <div id="resume-compare-content" class="resume-compare-grid">
+      </div>
     </div>
 
     <!-- Pagination -->

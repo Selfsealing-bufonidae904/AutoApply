@@ -34,6 +34,7 @@ class ResumeVersion(BaseModel):
     match_score: int | None
     llm_provider: str | None
     llm_model: str | None
+    is_favorite: bool = False
     created_at: str
 
 

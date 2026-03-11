@@ -1,6 +1,7 @@
 /* ═══════════════════════════════════════════════════════════════
-   RESUME LIBRARY — browse, preview, and download AI-generated resumes
-   Implements: FR-115 (library UI), FR-116 (detail view), FR-117 (app link)
+   RESUME LIBRARY — browse, preview, download, favorite, compare
+   Implements: FR-115 (library UI), FR-116 (detail view), FR-117 (app link),
+               FR-120 (favorite toggle), FR-123 (comparison view)
    ═══════════════════════════════════════════════════════════════ */
 import { apiFetch, escHtml } from './api.js';
 import { t, _applyDataI18n } from './i18n.js';
@@ -8,6 +9,9 @@ import { t, _applyDataI18n } from './i18n.js';
 let currentPage = 1;
 let currentPerPage = 50;
 let searchTimeout = null;
+
+/** IDs selected for comparison (max 2) */
+let compareSelection = [];
 
 /* ── Metrics cards ─────────────────────────────────────────── */
 
@@ -38,6 +42,38 @@ async function loadResumeMetrics() {
   } catch {
     container.innerHTML = '';
   }
+}
+
+/* ── Compare selection helpers ────────────────────────────── */
+
+function updateCompareUI() {
+  const btn = document.getElementById('resume-compare-btn');
+  const info = document.getElementById('resume-compare-info');
+  if (btn) btn.disabled = compareSelection.length < 2;
+  if (info) {
+    info.textContent = compareSelection.length > 0
+      ? t('resumes.compare_select_info').replace('{count}', compareSelection.length)
+      : t('resumes.compare_select');
+  }
+  // Sync checkbox states
+  document.querySelectorAll('.resume-compare-check').forEach(cb => {
+    cb.checked = compareSelection.includes(parseInt(cb.value, 10));
+  });
+}
+
+function onCompareCheckChange(id) {
+  const numId = parseInt(id, 10);
+  const idx = compareSelection.indexOf(numId);
+  if (idx >= 0) {
+    compareSelection.splice(idx, 1);
+  } else {
+    if (compareSelection.length >= 2) {
+      // Remove oldest selection
+      compareSelection.shift();
+    }
+    compareSelection.push(numId);
+  }
+  updateCompareUI();
 }
 
 /* ── Resume list ───────────────────────────────────────────── */
@@ -72,8 +108,25 @@ export async function loadResumes(page) {
       return;
     }
 
-    const rows = data.items.map(item => `
+    const rows = data.items.map(item => {
+      const isFav = !!item.is_favorite;
+      const starLabel = isFav ? t('resumes.unfavorite') : t('resumes.favorite');
+      const starCls = isFav ? 'resume-star active' : 'resume-star';
+      const isChecked = compareSelection.includes(item.id) ? 'checked' : '';
+
+      return `
       <tr>
+        <td class="no-row-click">
+          <input type="checkbox" class="resume-compare-check" value="${item.id}"
+                 onchange="onCompareCheck(${item.id})"
+                 aria-label="${escHtml(t('resumes.compare'))} ${escHtml(item.company)}"
+                 ${isChecked}>
+        </td>
+        <td class="no-row-click">
+          <button type="button" class="${starCls}" onclick="toggleFavorite(${item.id})"
+                  aria-label="${escHtml(starLabel)}" aria-pressed="${isFav}"
+                  title="${escHtml(starLabel)}">&#9733;</button>
+        </td>
         <td>${escHtml(item.company)}</td>
         <td>${escHtml(item.job_title)}</td>
         <td>${item.match_score ?? '-'}</td>
@@ -88,13 +141,15 @@ export async function loadResumes(page) {
                   aria-label="${escHtml(t('resumes.download'))} ${escHtml(item.company)}"
                   data-i18n="resumes.download">${escHtml(t('resumes.download'))}</button>` : ''}
         </td>
-      </tr>
-    `).join('');
+      </tr>`;
+    }).join('');
 
     listEl.innerHTML = `
       <table class="analytics-table" role="table" aria-label="${escHtml(t('resumes.title'))}">
         <thead>
           <tr>
+            <th style="width:36px" aria-label="${escHtml(t('resumes.compare'))}"></th>
+            <th style="width:36px" aria-label="${escHtml(t('resumes.favorite'))}"></th>
             <th data-i18n="resumes.col_company">${escHtml(t('resumes.col_company'))}</th>
             <th data-i18n="resumes.col_job_title">${escHtml(t('resumes.col_job_title'))}</th>
             <th data-i18n="resumes.col_score">${escHtml(t('resumes.col_score'))}</th>
@@ -108,6 +163,7 @@ export async function loadResumes(page) {
       </table>
     `;
     _applyDataI18n(listEl);
+    updateCompareUI();
 
     // Pagination
     const totalPages = Math.ceil(data.total_count / currentPerPage);
@@ -130,6 +186,124 @@ export async function loadResumes(page) {
     listEl.innerHTML = `<p class="text-danger" data-i18n="resumes.error_loading">${escHtml(t('resumes.error_loading'))}</p>`;
     _applyDataI18n(listEl);
   }
+}
+
+/* ── Favorite toggle ─────────────────────────────────────── */
+
+export async function toggleFavorite(id) {
+  try {
+    await apiFetch(`/api/resumes/${id}/favorite`, { method: 'PUT' });
+    loadResumes();
+  } catch {
+    // Silently fail — user sees no change
+  }
+}
+
+/* ── Comparison view ─────────────────────────────────────── */
+
+export async function compareSelected() {
+  if (compareSelection.length < 2) return;
+  const [leftId, rightId] = compareSelection;
+
+  const overlay = document.getElementById('resume-compare-overlay');
+  const content = document.getElementById('resume-compare-content');
+  if (!overlay || !content) return;
+
+  content.innerHTML = `<p data-i18n="resumes.loading">${escHtml(t('resumes.loading'))}</p>`;
+  overlay.classList.remove('hidden');
+
+  try {
+    const data = await apiFetch(`/api/resumes/compare?left=${leftId}&right=${rightId}`);
+    const left = data.left;
+    const right = data.right;
+
+    const leftMissing = !left.resume_md_content;
+    const rightMissing = !right.resume_md_content;
+
+    let diffHtml = '';
+    if (leftMissing || rightMissing) {
+      diffHtml = `<p class="text-muted" data-i18n="resumes.compare_file_missing">${escHtml(t('resumes.compare_file_missing'))}</p>`;
+    } else {
+      diffHtml = renderLineDiff(left.resume_md_content, right.resume_md_content);
+    }
+
+    content.innerHTML = `
+      <div class="resume-compare-side">
+        <div class="resume-compare-side-header">
+          <strong>${escHtml(left.company)}</strong> — ${escHtml(left.job_title)}
+          <span class="text-muted">${escHtml((left.created_at || '').slice(0, 10))}</span>
+        </div>
+      </div>
+      <div class="resume-compare-side">
+        <div class="resume-compare-side-header">
+          <strong>${escHtml(right.company)}</strong> — ${escHtml(right.job_title)}
+          <span class="text-muted">${escHtml((right.created_at || '').slice(0, 10))}</span>
+        </div>
+      </div>
+      <div class="resume-compare-diff" role="region" aria-label="${escHtml(t('resumes.compare_title'))}">
+        ${diffHtml}
+      </div>
+    `;
+    _applyDataI18n(content);
+  } catch {
+    content.innerHTML = `<p class="text-danger" data-i18n="resumes.error_loading">${escHtml(t('resumes.error_loading'))}</p>`;
+    _applyDataI18n(content);
+  }
+}
+
+export function closeCompareView() {
+  const overlay = document.getElementById('resume-compare-overlay');
+  if (overlay) overlay.classList.add('hidden');
+}
+
+/* ── Line diff (LCS-based, client-side — ADR-024) ────────── */
+
+function computeLCS(a, b) {
+  const m = a.length;
+  const n = b.length;
+  // Use rolling 2-row DP for space efficiency, then backtrack
+  const dp = Array.from({ length: m + 1 }, () => new Uint16Array(n + 1));
+  for (let i = 1; i <= m; i++) {
+    for (let j = 1; j <= n; j++) {
+      dp[i][j] = a[i - 1] === b[j - 1]
+        ? dp[i - 1][j - 1] + 1
+        : Math.max(dp[i - 1][j], dp[i][j - 1]);
+    }
+  }
+  // Backtrack to get diff operations
+  const ops = [];
+  let i = m, j = n;
+  while (i > 0 || j > 0) {
+    if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
+      ops.push({ type: 'equal', line: a[i - 1] });
+      i--; j--;
+    } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+      ops.push({ type: 'added', line: b[j - 1] });
+      j--;
+    } else {
+      ops.push({ type: 'removed', line: a[i - 1] });
+      i--;
+    }
+  }
+  return ops.reverse();
+}
+
+function renderLineDiff(leftText, rightText) {
+  const leftLines = leftText.split('\n');
+  const rightLines = rightText.split('\n');
+  const ops = computeLCS(leftLines, rightLines);
+
+  const html = ops.map(op => {
+    const cls = op.type === 'added' ? 'diff-added'
+      : op.type === 'removed' ? 'diff-removed'
+      : 'diff-unchanged';
+    const prefix = op.type === 'added' ? '+ '
+      : op.type === 'removed' ? '- '
+      : '  ';
+    return `<div class="${cls}" role="text">${escHtml(prefix + op.line)}</div>`;
+  }).join('');
+
+  return `<div class="diff-output" role="log" aria-label="Line diff">${html}</div>`;
 }
 
 /* ── Detail view ───────────────────────────────────────────── */
@@ -221,7 +395,6 @@ export function closeResumeDetail() {
 export function previewResumePdf(id) {
   const container = document.getElementById('resume-pdf-container');
   if (!container) return;
-  const token = window.__apiToken || '';
   container.innerHTML = `<iframe src="/api/resumes/${id}/pdf" title="Resume PDF preview"
     style="width:100%;height:600px;border:1px solid var(--border-color,#333);border-radius:8px;"
     ></iframe>`;
@@ -229,7 +402,6 @@ export function previewResumePdf(id) {
 }
 
 export function downloadResume(id) {
-  const token = window.__apiToken || '';
   const link = document.createElement('a');
   link.href = `/api/resumes/${id}/pdf?download=true`;
   link.download = `resume_${id}.pdf`;
@@ -240,6 +412,8 @@ export function switchResumePage(page) {
   if (page < 1) return;
   loadResumes(page);
 }
+
+export { onCompareCheckChange as onCompareCheck };
 
 /* ── Init search listener ──────────────────────────────────── */
 

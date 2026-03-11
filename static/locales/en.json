@@ -526,6 +526,18 @@
     "page_info": "Page {page} of {total}",
     "prev_page": "Previous",
     "next_page": "Next",
-    "no_provider": "N/A"
+    "no_provider": "N/A",
+    "compare": "Compare",
+    "compare_title": "Resume Comparison",
+    "compare_select": "Select 2 resumes to compare",
+    "compare_select_info": "{count} of 2 selected",
+    "compare_file_missing": "File not available for comparison",
+    "favorite": "Favorite",
+    "unfavorite": "Unfavorite",
+    "sort_favorites": "Favorites first",
+    "diff_added": "Added",
+    "diff_removed": "Removed",
+    "diff_unchanged": "Unchanged",
+    "diff_legend": "Diff Legend"
   }
 }

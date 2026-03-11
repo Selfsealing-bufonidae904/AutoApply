@@ -1,7 +1,8 @@
 """Resume versioning routes.
 
 Implements: FR-111 (resume list API), FR-112 (resume detail API),
-            FR-113 (resume PDF serve), FR-114 (resume metrics API).
+            FR-113 (resume PDF serve), FR-114 (resume metrics API),
+            FR-120 (favorite toggle), FR-123 (comparison API).
 """
 
 from __future__ import annotations
@@ -61,6 +62,46 @@ def list_resumes():
     })
 
 
+@resumes_bp.route("/api/resumes/compare", methods=["GET"])
+def resume_compare():
+    left_id = request.args.get("left", type=int)
+    right_id = request.args.get("right", type=int)
+    if not left_id or not right_id:
+        abort(400, description=t("errors.bad_request"))
+
+    db = _get_db()
+
+    def _read_side(version_id):
+        version = db.get_resume_version(version_id)
+        if version is None:
+            return None
+        md_path = version.get("resume_md_path", "")
+        content = None
+        file_missing = False
+        if md_path and _is_safe_resume_path(md_path):
+            try:
+                content = Path(md_path).read_text(encoding="utf-8")
+            except OSError:
+                file_missing = True
+        elif md_path:
+            file_missing = True
+        return {
+            "id": version["id"],
+            "company": version["company"],
+            "job_title": version["job_title"],
+            "created_at": version["created_at"],
+            "resume_md_content": content,
+            "file_missing": file_missing,
+        }
+
+    left = _read_side(left_id)
+    right = _read_side(right_id)
+    if left is None or right is None:
+        abort(404, description=t("errors.not_found"))
+
+    return jsonify({"left": left, "right": right})
+
+
 @resumes_bp.route("/api/resumes/<int:version_id>", methods=["GET"])
 def resume_detail(version_id: int):
     version = _get_db().get_resume_version(version_id)
@@ -84,6 +125,14 @@ def resume_detail(version_id: int):
         version["file_missing"] = True
 
     return jsonify(version)
+
+
+@resumes_bp.route("/api/resumes/<int:version_id>/favorite", methods=["PUT"])
+def toggle_favorite(version_id: int):
+    result = _get_db().toggle_favorite(version_id)
+    if result is None:
+        abort(404, description=t("errors.not_found"))
+    return jsonify({"id": version_id, "is_favorite": result})
 
 
 @resumes_bp.route("/api/resumes/<int:version_id>/pdf", methods=["GET"])

@@ -1,7 +1,9 @@
-"""Unit and integration tests for resume versioning (FR-110 to FR-119).
+"""Unit and integration tests for resume versioning (FR-110 to FR-119)
+and resume comparison/favorites (FR-120 to FR-125).
 
 Tests: Database resume version CRUD, GET /api/resumes endpoints,
-       resume metrics computation, and generate_documents() version metadata.
+       resume metrics computation, generate_documents() version metadata,
+       favorite toggle, and comparison API.
 """
 
 from __future__ import annotations
@@ -533,3 +535,144 @@ class TestBackwardCompatibility:
         metrics = db.get_resume_metrics()
         assert metrics["total_versions"] == 0
         assert metrics["fallback_interview_rate"] == 100.0
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# FR-120: Favorite Toggle
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestFavoriteToggleDB:
+    """FR-120: Toggle is_favorite on resume versions (DB layer)."""
+
+    def test_default_not_favorite(self, db):
+        app_id = _insert_app(db)
+        rv_id = _insert_version(db, app_id)
+        result = db.get_resume_version(rv_id)
+        assert result["is_favorite"] == 0
+
+    def test_toggle_on(self, db):
+        app_id = _insert_app(db)
+        rv_id = _insert_version(db, app_id)
+        result = db.toggle_favorite(rv_id)
+        assert result is True
+        row = db.get_resume_version(rv_id)
+        assert row["is_favorite"] == 1
+
+    def test_toggle_off(self, db):
+        app_id = _insert_app(db)
+        rv_id = _insert_version(db, app_id)
+        db.toggle_favorite(rv_id)  # on
+        result = db.toggle_favorite(rv_id)  # off
+        assert result is False
+        row = db.get_resume_version(rv_id)
+        assert row["is_favorite"] == 0
+
+    def test_toggle_nonexistent(self, db):
+        assert db.toggle_favorite(9999) is None
+
+    def test_sort_by_favorites(self, db):
+        app1 = _insert_app(db, external_id="e1")
+        app2 = _insert_app(db, external_id="e2")
+        _insert_version(db, app1, company="NotFav")
+        rv2 = _insert_version(db, app2, company="IsFav")
+        db.toggle_favorite(rv2)  # mark as favorite
+        items, _ = db.get_resume_versions(sort="is_favorite", order="desc")
+        assert items[0]["company"] == "IsFav"
+        assert items[0]["is_favorite"] == 1
+
+    def test_is_favorite_in_list(self, db):
+        app_id = _insert_app(db)
+        rv_id = _insert_version(db, app_id)
+        db.toggle_favorite(rv_id)
+        items, _ = db.get_resume_versions()
+        assert items[0]["is_favorite"] == 1
+
+
+class TestFavoriteToggleAPI:
+    """FR-120: PUT /api/resumes/<id>/favorite integration."""
+
+    def test_toggle_favorite_on(self, app_client, tmp_path):
+        import app_state
+        db = app_state.db
+        app_id = _insert_app(db, external_id="fav-1")
+        rv_id = _insert_version(db, app_id)
+        resp = app_client.put(f"/api/resumes/{rv_id}/favorite")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["id"] == rv_id
+        assert data["is_favorite"] is True
+
+    def test_toggle_favorite_off(self, app_client, tmp_path):
+        import app_state
+        db = app_state.db
+        app_id = _insert_app(db, external_id="fav-2")
+        rv_id = _insert_version(db, app_id)
+        app_client.put(f"/api/resumes/{rv_id}/favorite")  # on
+        resp = app_client.put(f"/api/resumes/{rv_id}/favorite")  # off
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["is_favorite"] is False
+
+    def test_toggle_nonexistent(self, app_client):
+        resp = app_client.put("/api/resumes/9999/favorite")
+        assert resp.status_code == 404
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# FR-123: Resume Comparison API
+# ═══════════════════════════════════════════════════════════════════════
+
+
+class TestComparisonAPI:
+    """FR-123: GET /api/resumes/compare?left=X&right=Y."""
+
+    def test_compare_success(self, app_client, tmp_path):
+        import app_state
+        db = app_state.db
+
+        resumes_dir = tmp_path / "profile" / "resumes"
+        md1 = resumes_dir / "left.md"
+        md2 = resumes_dir / "right.md"
+        md1.write_text("# Resume A\nLine 1", encoding="utf-8")
+        md2.write_text("# Resume B\nLine 2", encoding="utf-8")
+
+        app1 = _insert_app(db, external_id="cmp-1")
+        app2 = _insert_app(db, external_id="cmp-2")
+        rv1 = _insert_version(db, app1, company="Left", resume_md_path=str(md1))
+        rv2 = _insert_version(db, app2, company="Right", resume_md_path=str(md2))
+
+        resp = app_client.get(f"/api/resumes/compare?left={rv1}&right={rv2}")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["left"]["company"] == "Left"
+        assert data["right"]["company"] == "Right"
+        assert data["left"]["resume_md_content"] is not None
+        assert data["right"]["resume_md_content"] is not None
+
+    def test_compare_missing_params(self, app_client):
+        resp = app_client.get("/api/resumes/compare")
+        assert resp.status_code == 400
+
+    def test_compare_left_only(self, app_client):
+        resp = app_client.get("/api/resumes/compare?left=1")
+        assert resp.status_code == 400
+
+    def test_compare_not_found(self, app_client):
+        resp = app_client.get("/api/resumes/compare?left=9999&right=9998")
+        assert resp.status_code == 404
+
+    def test_compare_file_missing(self, app_client, tmp_path):
+        import app_state
+        db = app_state.db
+        app1 = _insert_app(db, external_id="cmp-3")
+        app2 = _insert_app(db, external_id="cmp-4")
+        rv1 = _insert_version(db, app1, company="A",
+                               resume_md_path="/nonexistent/a.md")
+        rv2 = _insert_version(db, app2, company="B",
+                               resume_md_path="/nonexistent/b.md")
+        resp = app_client.get(f"/api/resumes/compare?left={rv1}&right={rv2}")
+        assert resp.status_code == 200
+        data = resp.get_json()
+        assert data["left"]["resume_md_content"] is None
+        assert data["left"]["file_missing"] is True

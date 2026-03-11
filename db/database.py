@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS resume_versions (
     match_score INTEGER,
     llm_provider TEXT,
     llm_model TEXT,
+    is_favorite INTEGER NOT NULL DEFAULT 0,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_rv_app_id ON resume_versions(application_id);
@@ -274,7 +275,7 @@ class Database:
         order: str = "desc",
     ) -> tuple[list[dict], int]:
         """Return paginated resume versions joined with application status."""
-        allowed_sort = {"created_at", "company", "job_title", "match_score"}
+        allowed_sort = {"created_at", "company", "job_title", "match_score", "is_favorite"}
         if sort not in allowed_sort:
             sort = "created_at"
         if order not in ("asc", "desc"):
@@ -337,6 +338,22 @@ class Database:
                 d.get("resume_pdf_path", "")
             ).exists()
             return d
+
+    def toggle_favorite(self, version_id: int) -> bool | None:
+        """Toggle is_favorite for a resume version. Returns new value, or None if not found."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT is_favorite FROM resume_versions WHERE id = ?",
+                (version_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            new_val = 0 if row["is_favorite"] else 1
+            conn.execute(
+                "UPDATE resume_versions SET is_favorite = ? WHERE id = ?",
+                (new_val, version_id),
+            )
+            return bool(new_val)
 
     def get_resume_metrics(self) -> dict:
         """Compute aggregate resume effectiveness metrics (FR-114)."""

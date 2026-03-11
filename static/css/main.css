@@ -1108,6 +1108,120 @@ tr.clickable-row:focus-visible { outline: 2px solid var(--info); outline-offset:
   border-radius: 8px;
 }
 
+/* Star / favorite toggle */
+.resume-star {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  color: var(--text-muted, #666);
+  padding: 2px 4px;
+  line-height: 1;
+  transition: color 0.15s;
+}
+.resume-star:hover,
+.resume-star:focus-visible {
+  color: #f5c518;
+}
+.resume-star.active {
+  color: #f5c518;
+}
+
+/* Compare checkbox column */
+.resume-compare-check {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+/* Compare grid: two headers + diff below */
+.resume-compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-top: 12px;
+}
+.resume-compare-side-header {
+  padding: 12px;
+  background: var(--bg-secondary, #16213e);
+  border-radius: 8px;
+}
+.resume-compare-side-header strong {
+  color: var(--text-primary, #e0e0e0);
+}
+.resume-compare-diff {
+  grid-column: 1 / -1;
+  background: var(--bg-secondary, #16213e);
+  border-radius: 8px;
+  padding: 16px;
+  overflow-x: auto;
+}
+
+/* Diff output */
+.diff-output {
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.diff-added {
+  background: rgba(46, 160, 67, 0.15);
+  color: #3fb950;
+}
+.diff-removed {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+}
+.diff-unchanged {
+  color: var(--text-muted, #999);
+}
+
+/* Diff legend */
+.diff-legend {
+  display: flex;
+  gap: 16px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.diff-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.diff-added-label::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: rgba(46, 160, 67, 0.3);
+  display: inline-block;
+}
+.diff-removed-label::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: rgba(248, 81, 73, 0.3);
+  display: inline-block;
+}
+.diff-unchanged-label::before {
+  content: '';
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  background: var(--bg-secondary, #16213e);
+  border: 1px solid var(--text-muted, #666);
+  display: inline-block;
+}
+
+@media (max-width: 768px) {
+  .resume-compare-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 768px) {
   .resume-metrics-cards {
     grid-template-columns: repeat(2, 1fr);

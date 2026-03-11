@@ -34,6 +34,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **37 new tests**: Unit tests (19) + integration tests (16) + version meta tests (2) covering all endpoints and edge cases
   - **33 new i18n keys**: Full translation coverage for resume library UI
   - **WCAG 2.1 AA accessible**: ARIA roles/labels, keyboard navigation, semantic HTML, responsive grid layout
+- **Resume Comparison & Favorites v2.2.0 (TASK-019)**: Compare resumes side-by-side and mark favorites. (FR-120 to FR-125, ADR-024)
+  - **Favorite toggle**: Star icon on each resume row; `PUT /api/resumes/<id>/favorite` toggles `is_favorite` boolean
+  - **Sort by favorites**: "Favorites first" option in sort dropdown brings starred resumes to top
+  - **Comparison selection**: Checkboxes on resume rows (max 2); oldest auto-deselected on 3rd click
+  - **Compare overlay**: Side-by-side header with company/title/date, plus unified line diff view
+  - **Client-side line diff**: LCS-based diff algorithm renders added/removed/unchanged lines with color coding
+  - **2 new API endpoints**: `GET /api/resumes/compare?left=X&right=Y` (comparison data), `PUT /api/resumes/<id>/favorite` (toggle)
+  - **14 new tests**: Favorite DB (6), favorite API (3), comparison API (5) — total 51 resume tests
+  - **12 new i18n keys**: compare, favorite, unfavorite, diff_added/removed/unchanged, etc.
+  - **WCAG 2.1 AA accessible**: ARIA labels on stars/checkboxes, diff region roles, keyboard-navigable
 
 ## [1.9.0] - 2026-03-11
 
