@@ -22,6 +22,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **30 new i18n keys**: Full translation coverage for all analytics labels
   - **WCAG 2.1 AA accessible**: ARIA regions, keyboard-navigable period selector, semantic tables
 - **GitHub repo & PR rules in CLAUDE.md**: Section 9 codifies branch naming, commit format, PR process, CI checks, and merge strategy (CLAUDE.md v4.1)
+- **Resume Versioning v2.1.0 (TASK-018)**: Track, browse, and compare AI-generated resume versions. (FR-110 to FR-119, ADR-022, ADR-023)
+  - **Resume library screen**: New navigation tab with searchable, sortable, paginated table of all resume versions
+  - **Resume detail view**: Metadata panel (company, job title, score, AI provider/model, date, status) with rendered markdown content
+  - **PDF preview & download**: Inline PDF viewing via iframe embed, plus download button
+  - **Effectiveness metrics**: Summary cards showing tailored vs fallback interview rates, average scores by outcome, per-provider breakdown
+  - **Version recording**: `generate_documents()` now captures LLM provider/model metadata; bot saves `resume_versions` record per application
+  - **New `resume_versions` table**: Additive schema — no changes to existing `applications` table
+  - **4 new API endpoints**: `GET /api/resumes` (paginated list), `GET /api/resumes/<id>` (detail + markdown), `GET /api/resumes/<id>/pdf` (PDF serve), `GET /api/resumes/metrics` (aggregate metrics)
+  - **Path traversal protection**: All file-serving endpoints validate paths against data directory
+  - **37 new tests**: Unit tests (19) + integration tests (16) + version meta tests (2) covering all endpoints and edge cases
+  - **33 new i18n keys**: Full translation coverage for resume library UI
+  - **WCAG 2.1 AA accessible**: ARIA roles/labels, keyboard navigation, semantic HTML, responsive grid layout
 
 ## [1.9.0] - 2026-03-11
 

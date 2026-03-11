@@ -1015,3 +1015,120 @@ tr.clickable-row:focus-visible { outline: 2px solid var(--info); outline-offset:
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   RESUME LIBRARY (FR-115, FR-116)
+   ═══════════════════════════════════════════════════════════════ */
+.resume-metrics-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.resume-library-controls {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+  align-items: center;
+}
+.resume-library-controls .form-input {
+  flex: 1;
+}
+.resume-library-controls select.form-input {
+  flex: 0 0 150px;
+}
+
+.resume-pagination {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
+  margin-top: 16px;
+}
+.resume-page-info {
+  color: var(--text-muted, #999);
+  font-size: 13px;
+}
+
+.resume-detail-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-primary, #1a1a2e);
+  z-index: 10;
+  padding: 20px;
+  overflow-y: auto;
+}
+.resume-detail-header {
+  margin-bottom: 16px;
+}
+.resume-detail-meta {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-bottom: 20px;
+  padding: 16px;
+  background: var(--bg-secondary, #16213e);
+  border-radius: 8px;
+}
+.resume-meta-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.resume-meta-item strong {
+  font-size: 12px;
+  color: var(--text-muted, #999);
+  text-transform: uppercase;
+}
+.resume-detail-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.resume-detail-content {
+  background: var(--bg-secondary, #16213e);
+  border-radius: 8px;
+  padding: 20px;
+  margin-top: 16px;
+}
+.resume-md-rendered {
+  font-family: inherit;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.resume-pdf-embed {
+  margin-top: 16px;
+}
+.resume-pdf-embed iframe {
+  border-radius: 8px;
+}
+
+@media (max-width: 768px) {
+  .resume-metrics-cards {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .resume-library-controls {
+    flex-direction: column;
+  }
+  .resume-library-controls select.form-input {
+    flex: 1;
+    width: 100%;
+  }
+  .resume-detail-meta {
+    grid-template-columns: 1fr;
+  }
+  .resume-detail-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 480px) {
+  .resume-metrics-cards {
+    grid-template-columns: 1fr;
+  }
+}

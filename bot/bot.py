@@ -159,7 +159,7 @@ def run_bot(
                             message="Generating tailored resume and cover letter...",
                         )
 
-                        resume_path, cl_path, cover_letter_text = _generate_docs(
+                        resume_path, cl_path, cover_letter_text, version_meta = _generate_docs(
                             scored, config, profile_dir
                         )
 
@@ -201,6 +201,7 @@ def run_bot(
                                     db, scored, resume_path, cl_path,
                                     cover_letter_text, manual_result,
                                     description_path=desc_path,
+                                    version_meta=version_meta,
                                 )
                                 emit(
                                     "APPLIED",
@@ -229,6 +230,7 @@ def run_bot(
                             db, scored, resume_path, cl_path,
                             cover_letter_text, result,
                             description_path=desc_path,
+                            version_meta=version_meta,
                         )
 
                         # Emit result
@@ -322,9 +324,10 @@ def _generate_docs(scored: ScoredJob, config, profile_dir: Path):
     resume_path = None
     cl_path = None
     cover_letter_text = ""
+    version_meta = None
 
     try:
-        resume_path, cl_path = generate_documents(
+        resume_path, cl_path, version_meta = generate_documents(
             job=scored,
             profile=config.profile,
             experience_dir=profile_dir / "experiences",
@@ -342,7 +345,7 @@ def _generate_docs(scored: ScoredJob, config, profile_dir: Path):
                 resume_path = fallback
         cover_letter_text = config.bot.cover_letter_template or ""
 
-    return resume_path, cl_path, cover_letter_text
+    return resume_path, cl_path, cover_letter_text, version_meta
 
 
 def _apply_to_job(scored, resume_path, cover_letter_text, config, page):
@@ -424,13 +427,13 @@ def _plain_to_html(text: str) -> str:
 
 
 def _save_application(db, scored, resume_path, cl_path, cover_letter_text, result,
-                      description_path=None):
-    """Save an application record to the database."""
+                      description_path=None, version_meta=None):
+    """Save an application record and optional resume version to the database."""
     try:
         status = "applied" if result.success else (
             "manual_required" if result.manual_required else "error"
         )
-        db.save_application(
+        app_id = db.save_application(
             external_id=scored.raw.external_id,
             platform=scored.raw.platform,
             job_title=scored.raw.title,
@@ -446,5 +449,21 @@ def _save_application(db, scored, resume_path, cl_path, cover_letter_text, resul
             error_message=result.error_message,
             description_path=str(description_path) if description_path else None,
         )
+
+        # Record resume version if AI-generated (FR-118)
+        if version_meta and app_id:
+            try:
+                db.save_resume_version(
+                    application_id=app_id,
+                    job_title=scored.raw.title,
+                    company=scored.raw.company,
+                    resume_md_path=version_meta["resume_md_path"],
+                    resume_pdf_path=version_meta["resume_pdf_path"],
+                    match_score=scored.score,
+                    llm_provider=version_meta.get("llm_provider"),
+                    llm_model=version_meta.get("llm_model"),
+                )
+            except Exception as e:
+                logger.warning("Failed to save resume version: %s", e)
     except Exception as e:
         logger.error("Failed to save application to DB: %s", e)

@@ -357,11 +357,11 @@ def generate_documents(
     output_dir_resumes: Path,
     output_dir_cover_letters: Path,
     llm_config=None,
-) -> tuple[Path, Path]:
+) -> tuple[Path, Path, dict]:
     """Generate tailored resume and cover letter for a job application.
 
     Reads experience files, calls the configured LLM twice (resume + cover
-    letter), saves outputs to disk, and returns paths.
+    letter), saves outputs to disk, and returns paths plus version metadata.
 
     Args:
         job: Object with ``.id`` (str), ``.raw.company`` (str),
@@ -374,7 +374,9 @@ def generate_documents(
         llm_config: LLMConfig with provider, api_key, model.
 
     Returns:
-        Tuple of (resume_pdf_path, cover_letter_txt_path).
+        Tuple of (resume_pdf_path, cover_letter_txt_path, version_meta).
+        version_meta contains resume_md_path, resume_pdf_path, llm_provider,
+        and llm_model for resume version recording (FR-118).
 
     Raises:
         RuntimeError: If LLM invocation fails.
@@ -390,6 +392,10 @@ def generate_documents(
     # Ensure output directories exist
     output_dir_resumes.mkdir(parents=True, exist_ok=True)
     output_dir_cover_letters.mkdir(parents=True, exist_ok=True)
+
+    # Capture LLM provider/model for version tracking (FR-118)
+    llm_provider = getattr(llm_config, "provider", None) if llm_config else None
+    llm_model = getattr(llm_config, "model", None) if llm_config else None
 
     # Generate resume via LLM
     resume_md_text = invoke_llm(RESUME_PROMPT.format(
@@ -421,4 +427,11 @@ def generate_documents(
     cl_path = output_dir_cover_letters / f"{base_name}.txt"
     cl_path.write_text(cover_letter_text, encoding="utf-8")
 
-    return resume_pdf_path, cl_path
+    version_meta = {
+        "resume_md_path": str(resume_md_path),
+        "resume_pdf_path": str(resume_pdf_path),
+        "llm_provider": llm_provider,
+        "llm_model": llm_model,
+    }
+
+    return resume_pdf_path, cl_path, version_meta

@@ -6,6 +6,7 @@ import { loadFeedHistory } from './feed.js';
 import { loadApplications } from './applications.js';
 import { loadProfileFiles } from './profile.js';
 import { loadAnalytics } from './analytics.js';
+import { loadResumes } from './resumes.js';
 import { loadSettings, loadApplyMode } from './settings.js';
 
 export function initNavTabs() {
@@ -46,6 +47,7 @@ export function switchScreen(name) {
   if (name === 'applications') loadApplications();
   if (name === 'profile') loadProfileFiles();
   if (name === 'analytics') loadAnalytics();
+  if (name === 'resumes') loadResumes();
   if (name === 'settings') loadSettings();
 }
 

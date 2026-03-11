@@ -312,7 +312,7 @@ class TestGenerateDocuments:
     def test_returns_existing_file_paths(self, mock_env):
         """AC-036-1: Returns tuple of paths that exist on disk."""
         with patch("core.ai_engine.invoke_llm", mock_env["mock_invoke"]):
-            pdf_path, cl_path = generate_documents(
+            pdf_path, cl_path, _meta = generate_documents(
                 mock_env["job"], mock_env["profile"],
                 mock_env["exp_dir"], mock_env["res_dir"], mock_env["cl_dir"],
                 llm_config=mock_env["llm_config"],
@@ -324,7 +324,7 @@ class TestGenerateDocuments:
     def test_creates_three_files(self, mock_env):
         """AC-036-2: Creates .md, .pdf, and .txt files."""
         with patch("core.ai_engine.invoke_llm", mock_env["mock_invoke"]):
-            pdf_path, cl_path = generate_documents(
+            pdf_path, cl_path, _meta = generate_documents(
                 mock_env["job"], mock_env["profile"],
                 mock_env["exp_dir"], mock_env["res_dir"], mock_env["cl_dir"],
                 llm_config=mock_env["llm_config"],
@@ -338,7 +338,7 @@ class TestGenerateDocuments:
     def test_company_name_in_filename(self, mock_env):
         """AC-036-3: Company name has spaces replaced with hyphens, lowercased."""
         with patch("core.ai_engine.invoke_llm", mock_env["mock_invoke"]):
-            pdf_path, _ = generate_documents(
+            pdf_path, _, _meta = generate_documents(
                 mock_env["job"], mock_env["profile"],
                 mock_env["exp_dir"], mock_env["res_dir"], mock_env["cl_dir"],
                 llm_config=mock_env["llm_config"],
@@ -386,7 +386,7 @@ class TestGenerateDocuments:
     def test_cover_letter_content_saved(self, mock_env):
         """Cover letter text is correctly saved to .txt file."""
         with patch("core.ai_engine.invoke_llm", mock_env["mock_invoke"]):
-            _, cl_path = generate_documents(
+            _, cl_path, _meta = generate_documents(
                 mock_env["job"], mock_env["profile"],
                 mock_env["exp_dir"], mock_env["res_dir"], mock_env["cl_dir"],
                 llm_config=mock_env["llm_config"],
@@ -397,7 +397,7 @@ class TestGenerateDocuments:
     def test_resume_markdown_saved(self, mock_env):
         """Resume Markdown is saved to .md file."""
         with patch("core.ai_engine.invoke_llm", mock_env["mock_invoke"]):
-            pdf_path, _ = generate_documents(
+            pdf_path, _, _meta = generate_documents(
                 mock_env["job"], mock_env["profile"],
                 mock_env["exp_dir"], mock_env["res_dir"], mock_env["cl_dir"],
                 llm_config=mock_env["llm_config"],

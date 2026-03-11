@@ -24,6 +24,19 @@ class Application(BaseModel):
     notes: str | None
 
 
+class ResumeVersion(BaseModel):
+    id: int
+    application_id: int
+    job_title: str
+    company: str
+    resume_md_path: str
+    resume_pdf_path: str
+    match_score: int | None
+    llm_provider: str | None
+    llm_model: str | None
+    created_at: str
+
+
 class FeedEvent(BaseModel):
     id: int
     event_type: str

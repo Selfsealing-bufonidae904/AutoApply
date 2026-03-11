@@ -10,7 +10,8 @@
     "applications": "Applications",
     "profile": "Experience Files",
     "settings": "Settings",
-    "analytics": "Analytics"
+    "analytics": "Analytics",
+    "resumes": "Resume Library"
   },
 
   "wizard": {
@@ -489,5 +490,42 @@
 
   "file_upload": {
     "click_to_change": "Click to change"
+  },
+
+  "resumes": {
+    "title": "Resume Library",
+    "search_placeholder": "Search by company or job title...",
+    "empty": "No resume versions yet. Resumes are generated automatically when you apply to jobs.",
+    "col_company": "Company",
+    "col_job_title": "Job Title",
+    "col_score": "Score",
+    "col_date": "Date",
+    "col_status": "Status",
+    "col_provider": "AI Provider",
+    "col_actions": "Actions",
+    "view": "View",
+    "download": "Download",
+    "view_pdf": "View PDF",
+    "download_pdf": "Download PDF",
+    "view_application": "View Application",
+    "back_to_library": "Back to Library",
+    "file_missing": "Resume file not found on disk",
+    "metadata": "Resume Details",
+    "generated_on": "Generated on",
+    "ai_model": "AI Model",
+    "match_score": "Match Score",
+    "metrics_title": "Resume Effectiveness",
+    "total_versions": "Total Versions",
+    "tailored_rate": "Tailored Interview Rate",
+    "fallback_rate": "Fallback Interview Rate",
+    "avg_score_interview": "Avg Score (Interviewed)",
+    "avg_score_rejected": "Avg Score (Rejected)",
+    "by_provider": "By AI Provider",
+    "loading": "Loading resumes...",
+    "error_loading": "Error loading resumes",
+    "page_info": "Page {page} of {total}",
+    "prev_page": "Previous",
+    "next_page": "Next",
+    "no_provider": "N/A"
   }
 }

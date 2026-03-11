@@ -344,6 +344,7 @@
     <li role="presentation"><a role="tab" data-screen="applications" aria-selected="false" tabindex="-1" data-i18n="nav.applications">Applications</a></li>
     <li role="presentation"><a role="tab" data-screen="profile" aria-selected="false" tabindex="-1" data-i18n="nav.profile">Profile</a></li>
     <li role="presentation"><a role="tab" data-screen="analytics" aria-selected="false" tabindex="-1" data-i18n="nav.analytics">Analytics</a></li>
+    <li role="presentation"><a role="tab" data-screen="resumes" aria-selected="false" tabindex="-1" data-i18n="nav.resumes">Resume Library</a></li>
     <li role="presentation"><a role="tab" data-screen="settings" aria-selected="false" tabindex="-1" data-i18n="nav.settings">Settings</a></li>
   </ul>
   <div class="nav-right">
@@ -570,6 +571,46 @@
       <div class="card">
         <h3 style="margin-bottom:16px;" data-i18n="analytics.response_title">Response Times</h3>
         <div id="response-times-container"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- RESUME LIBRARY -->
+  <div class="screen hidden" id="screen-resumes" role="tabpanel" aria-label="Resume Library">
+    <h2 data-i18n="resumes.title">Resume Library</h2>
+
+    <!-- Metrics summary cards -->
+    <div class="resume-metrics-cards" id="resume-metrics" role="region" aria-label="Resume effectiveness metrics">
+    </div>
+
+    <!-- Search + controls -->
+    <div class="resume-library-controls">
+      <input type="text" id="resume-search" class="form-input"
+             data-i18n-placeholder="resumes.search_placeholder"
+             placeholder="Search by company or job title..."
+             aria-label="Search resumes">
+      <select id="resume-sort" class="form-input" aria-label="Sort resumes">
+        <option value="created_at" data-i18n="resumes.col_date">Date</option>
+        <option value="company" data-i18n="resumes.col_company">Company</option>
+        <option value="match_score" data-i18n="resumes.col_score">Score</option>
+      </select>
+    </div>
+
+    <!-- Resume list -->
+    <div id="resume-list" role="region" aria-label="Resume versions list" aria-live="polite">
+    </div>
+
+    <!-- Pagination -->
+    <div id="resume-pagination" class="resume-pagination" role="navigation" aria-label="Resume list pagination">
+    </div>
+
+    <!-- Detail overlay (hidden by default) -->
+    <div id="resume-detail-overlay" class="resume-detail-overlay hidden" role="dialog" aria-label="Resume detail">
+      <div class="resume-detail-header">
+        <button type="button" class="btn btn-secondary" onclick="closeResumeDetail()"
+                data-i18n="resumes.back_to_library">Back to Library</button>
+      </div>
+      <div id="resume-detail-content" class="resume-detail-body">
       </div>
     </div>
   </div>

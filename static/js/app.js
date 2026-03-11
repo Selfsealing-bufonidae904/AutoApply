@@ -22,6 +22,7 @@ import { openLoginBrowser, closeLoginBrowser } from './login.js';
 import { closeModal } from './modals.js';
 import { updateAIIndicators } from './ai-status.js';
 import { switchAnalyticsPeriod } from './analytics.js';
+import { loadResumes, viewResume, closeResumeDetail, previewResumePdf, downloadResume, switchResumePage, initResumeSearch } from './resumes.js';
 
 // ── Expose globals for inline onclick handlers in HTML ──────────
 // These are used by onclick attributes in the HTML template.
@@ -63,6 +64,11 @@ window.reviewManualSubmit = reviewManualSubmit;
 window.reviewSkip = reviewSkip;
 window.closeModal = closeModal;
 window.switchAnalyticsPeriod = switchAnalyticsPeriod;
+window.viewResume = viewResume;
+window.closeResumeDetail = closeResumeDetail;
+window.previewResumePdf = previewResumePdf;
+window.downloadResume = downloadResume;
+window.switchResumePage = switchResumePage;
 window.switchScreen = switchScreen;
 window.showScreen = switchScreen;
 window.t = t;
@@ -144,6 +150,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initFileUpload();
   initSocket();
   initAccessibility();
+  initResumeSearch();
 
   try {
     const res = await fetch('/api/setup/status');

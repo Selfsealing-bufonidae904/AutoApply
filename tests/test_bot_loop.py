@@ -198,15 +198,19 @@ class TestGenerateDocs:
         resume_path = tmp_path / "resume.pdf"
         cl_path = tmp_path / "cl.txt"
         cl_path.write_text("Dear Sir...", encoding="utf-8")
-        mock_gen.return_value = (resume_path, cl_path)
+        version_meta = {"resume_md_path": str(tmp_path / "resume.md"),
+                        "resume_pdf_path": str(resume_path),
+                        "llm_provider": "anthropic", "llm_model": "test"}
+        mock_gen.return_value = (resume_path, cl_path, version_meta)
 
         scored = _make_scored()
         config = _make_config()
 
-        r, c, text = _generate_docs(scored, config, tmp_path)
+        r, c, text, meta = _generate_docs(scored, config, tmp_path)
         assert r == resume_path
         assert c == cl_path
         assert text == "Dear Sir..."
+        assert meta == version_meta
 
     @patch("core.ai_engine.generate_documents")
     def test_fallback_on_failure(self, mock_gen, tmp_path):
@@ -220,10 +224,11 @@ class TestGenerateDocs:
         # Create the fallback file
         (tmp_path / "fallback.pdf").write_bytes(b"fake pdf")
 
-        r, c, text = _generate_docs(scored, config, tmp_path)
+        r, c, text, meta = _generate_docs(scored, config, tmp_path)
         assert r == tmp_path / "fallback.pdf"
         assert c is None
         assert text == "Dear Hiring Manager..."
+        assert meta is None
 
     @patch("core.ai_engine.generate_documents")
     def test_fallback_no_resume(self, mock_gen, tmp_path):
@@ -235,9 +240,10 @@ class TestGenerateDocs:
         config = _make_config()
         # No fallback_resume_path
 
-        r, c, text = _generate_docs(scored, config, tmp_path)
+        r, c, text, meta = _generate_docs(scored, config, tmp_path)
         assert r is None
         assert c is None
+        assert meta is None
 
 
 # ===================================================================
@@ -428,7 +434,7 @@ class TestRunBotMainLoop:
         raw = FakeRawJob()
         scored = _make_scored(raw=raw, score=80, pass_filter=True)
         mock_score.return_value = scored
-        mock_gen.return_value = ("/resume.pdf", "/cl.txt", "cover text")
+        mock_gen.return_value = ("/resume.pdf", "/cl.txt", "cover text", None)
         mock_apply.return_value = ApplyResult(success=True)
 
         state, searcher_cls = self._make_bot_state_with_searcher([raw])
@@ -504,7 +510,7 @@ class TestRunBotMainLoop:
         raw = FakeRawJob()
         scored = _make_scored(raw=raw, pass_filter=True)
         mock_score.return_value = scored
-        mock_gen.return_value = ("/r.pdf", "/cl.txt", "cover")
+        mock_gen.return_value = ("/r.pdf", "/cl.txt", "cover", None)
         mock_apply.return_value = ApplyResult(success=False, captcha_detected=True)
 
         state, searcher_cls = self._make_bot_state_with_searcher([raw])
@@ -530,7 +536,7 @@ class TestRunBotMainLoop:
         raw = FakeRawJob()
         scored = _make_scored(raw=raw, pass_filter=True)
         mock_score.return_value = scored
-        mock_gen.return_value = ("/r.pdf", "/cl.txt", "cover")
+        mock_gen.return_value = ("/r.pdf", "/cl.txt", "cover", None)
         mock_apply.return_value = ApplyResult(success=False, error_message="Button missing")
 
         state, searcher_cls = self._make_bot_state_with_searcher([raw])
@@ -609,7 +615,7 @@ class TestRunBotReviewMode:
         raw = FakeRawJob()
         scored = _make_scored(raw=raw, pass_filter=True)
         mock_score.return_value = scored
-        mock_gen.return_value = ("/r.pdf", "/cl.txt", "cover")
+        mock_gen.return_value = ("/r.pdf", "/cl.txt", "cover", None)
         mock_review.return_value = ("skip", None)
 
         state, searcher_cls = self._make_review_setup([raw])
@@ -636,7 +642,7 @@ class TestRunBotReviewMode:
         raw = FakeRawJob()
         scored = _make_scored(raw=raw, pass_filter=True)
         mock_score.return_value = scored
-        mock_gen.return_value = ("/r.pdf", "/cl.txt", "cover")
+        mock_gen.return_value = ("/r.pdf", "/cl.txt", "cover", None)
         mock_review.return_value = ("manual", None)
 
         state, searcher_cls = self._make_review_setup([raw])
@@ -664,7 +670,7 @@ class TestRunBotReviewMode:
         raw = FakeRawJob()
         scored = _make_scored(raw=raw, pass_filter=True)
         mock_score.return_value = scored
-        mock_gen.return_value = ("/r.pdf", "/cl.txt", "original cover")
+        mock_gen.return_value = ("/r.pdf", "/cl.txt", "original cover", None)
         mock_review.return_value = ("edit", "edited cover letter")
         mock_apply.return_value = ApplyResult(success=True)
 
@@ -693,7 +699,7 @@ class TestRunBotReviewMode:
         raw = FakeRawJob()
         scored = _make_scored(raw=raw, pass_filter=True)
         mock_score.return_value = scored
-        mock_gen.return_value = ("/r.pdf", "/cl.txt", "cover")
+        mock_gen.return_value = ("/r.pdf", "/cl.txt", "cover", None)
 
         state = BotState()
         state.start()
@@ -733,7 +739,7 @@ class TestRunBotReviewMode:
         raw = FakeRawJob()
         scored = _make_scored(raw=raw, pass_filter=True)
         mock_score.return_value = scored
-        mock_gen.return_value = ("/r.pdf", "/cl.txt", "cover")
+        mock_gen.return_value = ("/r.pdf", "/cl.txt", "cover", None)
         mock_review.return_value = ("approve", None)
         mock_apply.return_value = ApplyResult(success=True)
 

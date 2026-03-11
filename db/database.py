@@ -1,7 +1,7 @@
 """SQLite database layer for application storage and analytics.
 
 Implements: FR-004 (SQLite database), FR-005 (application storage),
-            FR-006 (analytics queries).
+            FR-006 (analytics queries), FR-110 (resume version storage).
 """
 
 from __future__ import annotations
@@ -46,6 +46,21 @@ CREATE TABLE IF NOT EXISTS feed_events (
     message TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS resume_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id INTEGER NOT NULL REFERENCES applications(id),
+    job_title TEXT NOT NULL,
+    company TEXT NOT NULL,
+    resume_md_path TEXT NOT NULL,
+    resume_pdf_path TEXT NOT NULL,
+    match_score INTEGER,
+    llm_provider TEXT,
+    llm_model TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_rv_app_id ON resume_versions(application_id);
+CREATE INDEX IF NOT EXISTS idx_rv_created_at ON resume_versions(created_at);
 """
 
 
@@ -216,6 +231,211 @@ class Database:
                 "SELECT * FROM feed_events ORDER BY created_at DESC LIMIT ?", (limit,)
             ).fetchall()
             return [FeedEvent(**dict(row)) for row in rows]
+
+    # ------------------------------------------------------------------
+    # Resume versions (FR-110, FR-111, FR-112, FR-114)
+    # ------------------------------------------------------------------
+
+    def save_resume_version(
+        self,
+        application_id: int,
+        job_title: str,
+        company: str,
+        resume_md_path: str,
+        resume_pdf_path: str,
+        match_score: int | None,
+        llm_provider: str | None,
+        llm_model: str | None,
+    ) -> int:
+        """Insert a resume version record. Returns the new id."""
+        with self._connect() as conn:
+            cursor = conn.execute(
+                """
+                INSERT INTO resume_versions (
+                    application_id, job_title, company,
+                    resume_md_path, resume_pdf_path,
+                    match_score, llm_provider, llm_model
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    application_id, job_title, company,
+                    resume_md_path, resume_pdf_path,
+                    match_score, llm_provider, llm_model,
+                ),
+            )
+            return cursor.lastrowid  # type: ignore[return-value]
+
+    def get_resume_versions(
+        self,
+        page: int = 1,
+        per_page: int = 50,
+        search: str | None = None,
+        sort: str = "created_at",
+        order: str = "desc",
+    ) -> tuple[list[dict], int]:
+        """Return paginated resume versions joined with application status."""
+        allowed_sort = {"created_at", "company", "job_title", "match_score"}
+        if sort not in allowed_sort:
+            sort = "created_at"
+        if order not in ("asc", "desc"):
+            order = "desc"
+        if page < 1:
+            page = 1
+        if per_page < 1 or per_page > 100:
+            per_page = 50
+
+        base = """
+            FROM resume_versions rv
+            LEFT JOIN applications a ON rv.application_id = a.id
+        """
+        params: list = []
+        if search:
+            base += " WHERE (rv.company LIKE ? OR rv.job_title LIKE ?)"
+            params.extend([f"%{search}%", f"%{search}%"])
+
+        with self._connect() as conn:
+            total = conn.execute(
+                f"SELECT COUNT(*) {base}", params
+            ).fetchone()[0]
+
+            rows = conn.execute(
+                f"""
+                SELECT rv.*, a.status AS application_status
+                {base}
+                ORDER BY rv.{sort} {order}
+                LIMIT ? OFFSET ?
+                """,
+                params + [per_page, (page - 1) * per_page],
+            ).fetchall()
+
+            items = []
+            for row in rows:
+                d = dict(row)
+                d["resume_pdf_exists"] = Path(
+                    d.get("resume_pdf_path", "")
+                ).exists()
+                items.append(d)
+
+            return items, total
+
+    def get_resume_version(self, version_id: int) -> dict | None:
+        """Return a single resume version with application status, or None."""
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                SELECT rv.*, a.status AS application_status
+                FROM resume_versions rv
+                LEFT JOIN applications a ON rv.application_id = a.id
+                WHERE rv.id = ?
+                """,
+                (version_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            d = dict(row)
+            d["resume_pdf_exists"] = Path(
+                d.get("resume_pdf_path", "")
+            ).exists()
+            return d
+
+    def get_resume_metrics(self) -> dict:
+        """Compute aggregate resume effectiveness metrics (FR-114)."""
+        interview_statuses = (
+            "interview", "interviewing", "interviewed", "offer", "accepted"
+        )
+        placeholders = ",".join("?" for _ in interview_statuses)
+
+        with self._connect() as conn:
+            # Total versions
+            total = conn.execute(
+                "SELECT COUNT(*) FROM resume_versions"
+            ).fetchone()[0]
+
+            # Tailored interview rate
+            tailored_row = conn.execute(
+                f"""
+                SELECT COUNT(*) AS total,
+                    SUM(CASE WHEN a.status IN ({placeholders})
+                        THEN 1 ELSE 0 END) AS positive
+                FROM resume_versions rv
+                JOIN applications a ON rv.application_id = a.id
+                """,
+                interview_statuses,
+            ).fetchone()
+            tailored_total = tailored_row["total"]
+            tailored_positive = tailored_row["positive"] or 0
+            tailored_rate = (
+                round(tailored_positive * 100.0 / tailored_total, 1)
+                if tailored_total > 0 else 0.0
+            )
+
+            # Fallback rate (apps with resume_path but no resume_version)
+            fallback_row = conn.execute(
+                f"""
+                SELECT COUNT(*) AS total,
+                    SUM(CASE WHEN a.status IN ({placeholders})
+                        THEN 1 ELSE 0 END) AS positive
+                FROM applications a
+                LEFT JOIN resume_versions rv ON a.id = rv.application_id
+                WHERE rv.id IS NULL AND a.resume_path IS NOT NULL
+                """,
+                interview_statuses,
+            ).fetchone()
+            fallback_total = fallback_row["total"]
+            fallback_positive = fallback_row["positive"] or 0
+            fallback_rate = (
+                round(fallback_positive * 100.0 / fallback_total, 1)
+                if fallback_total > 0 else 0.0
+            )
+
+            # Avg scores
+            score_row = conn.execute(
+                f"""
+                SELECT
+                    AVG(CASE WHEN a.status IN ({placeholders})
+                        THEN rv.match_score END) AS avg_interviewed,
+                    AVG(CASE WHEN a.status = 'rejected'
+                        THEN rv.match_score END) AS avg_rejected
+                FROM resume_versions rv
+                JOIN applications a ON rv.application_id = a.id
+                """,
+                interview_statuses,
+            ).fetchone()
+
+            # By provider
+            provider_rows = conn.execute(
+                f"""
+                SELECT rv.llm_provider AS provider,
+                    COUNT(*) AS count,
+                    SUM(CASE WHEN a.status IN ({placeholders})
+                        THEN 1 ELSE 0 END) * 100.0 / COUNT(*) AS interview_rate
+                FROM resume_versions rv
+                JOIN applications a ON rv.application_id = a.id
+                WHERE rv.llm_provider IS NOT NULL
+                GROUP BY rv.llm_provider
+                """,
+                interview_statuses,
+            ).fetchall()
+
+            return {
+                "total_versions": total,
+                "tailored_interview_rate": tailored_rate,
+                "fallback_interview_rate": fallback_rate,
+                "avg_score_interviewed": round(
+                    score_row["avg_interviewed"] or 0, 1
+                ),
+                "avg_score_rejected": round(
+                    score_row["avg_rejected"] or 0, 1
+                ),
+                "by_provider": [
+                    {
+                        "provider": r["provider"],
+                        "count": r["count"],
+                        "interview_rate": round(r["interview_rate"], 1),
+                    }
+                    for r in provider_rows
+                ],
+            }
 
     def get_analytics_summary(self) -> dict:
         with self._connect() as conn:
