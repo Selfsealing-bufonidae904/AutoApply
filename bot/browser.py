@@ -1,4 +1,7 @@
-"""Browser manager — persistent Playwright context for bot automation."""
+"""Browser manager — persistent Playwright context for bot automation.
+
+Implements: FR-043 (browser session management).
+"""
 
 from __future__ import annotations
 
@@ -6,7 +9,7 @@ import logging
 import os
 import platform
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from config.settings import AppConfig
@@ -47,9 +50,9 @@ class BrowserManager:
         self.profile_dir = Path.home() / ".autoapply" / "browser_profile"
         self.profile_dir.mkdir(parents=True, exist_ok=True)
 
-        self._playwright = None
-        self._context = None
-        self._page = None
+        self._playwright: Any = None
+        self._context: Any = None
+        self._page: Any = None
 
     def get_page(self):
         """Get or create a Playwright Page in a persistent context.
@@ -121,16 +124,16 @@ class BrowserManager:
         if self._context:
             try:
                 self._context.close()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to close browser context: %s", e)
             self._context = None
             self._page = None
 
         if self._playwright:
             try:
                 self._playwright.stop()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to stop Playwright: %s", e)
             self._playwright = None
 
         logger.info("Browser closed")

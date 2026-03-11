@@ -1,5 +1,7 @@
 """Bot scheduler — auto-starts and stops the bot based on a time schedule.
 
+Implements: FR-060 (bot scheduling), FR-061 (time-based auto-start/stop).
+
 The scheduler runs in a background thread and checks once per minute whether
 the bot should be running based on the configured days and time window.
 """
@@ -8,7 +10,6 @@ from __future__ import annotations
 
 import logging
 import threading
-import time
 from datetime import datetime
 from typing import TYPE_CHECKING, Callable
 
@@ -79,7 +80,7 @@ class BotScheduler:
     def __init__(
         self,
         get_schedule: Callable[[], "ScheduleConfig | None"],
-        start_bot: Callable[[], None],
+        start_bot: Callable[[], object],
         stop_bot: Callable[[], None],
         is_bot_running: Callable[[], bool],
         check_interval: int = 60,

@@ -1,5 +1,7 @@
 """Ashby ATS application automation.
 
+Implements: FR-071 (Ashby ATS).
+
 Ashby is used by OpenAI, YC startups, and other tech companies.
 Application pages live at ``jobs.ashbyhq.com/{company}/application/{id}``
 and present a single-page form with personal info, resume upload,
@@ -253,7 +255,8 @@ class AshbyApplier(BaseApplier):
         for label in labels:
             try:
                 label_text = label.inner_text().strip().lower()
-            except Exception:
+            except Exception as e:
+                logger.debug("Ashby: failed to read label text: %s", e)
                 continue
 
             # Match against screening_answers

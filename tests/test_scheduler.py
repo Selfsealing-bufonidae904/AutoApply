@@ -17,7 +17,6 @@ import pytest
 from config.settings import ScheduleConfig
 from core.scheduler import BotScheduler, is_within_schedule
 
-
 # ===================================================================
 # is_within_schedule
 # ===================================================================
@@ -329,13 +328,16 @@ class TestScheduleAPI:
         """Flask test client with isolated config."""
         monkeypatch.setattr("config.settings.get_data_dir", lambda: tmp_path)
         monkeypatch.setattr("app.get_data_dir", lambda: tmp_path)
+        monkeypatch.setattr("routes.profile.get_data_dir", lambda: tmp_path)
         (tmp_path / "profile" / "experiences").mkdir(parents=True)
 
         from db.database import Database
         test_db = Database(tmp_path / "test.db")
         monkeypatch.setattr("app.db", test_db)
+        monkeypatch.setattr("app_state.db", test_db)
 
-        from app import app as flask_app, bot_scheduler
+        from app import app as flask_app
+        from app import bot_scheduler
         flask_app.config["TESTING"] = True
         if bot_scheduler.running:
             bot_scheduler.stop()

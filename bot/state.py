@@ -1,3 +1,8 @@
+"""Bot state machine — tracks status, counters, and review gate.
+
+Implements: FR-041 (bot state machine).
+"""
+
 from __future__ import annotations
 
 import threading

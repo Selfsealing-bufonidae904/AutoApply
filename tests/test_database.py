@@ -33,13 +33,11 @@ from __future__ import annotations
 
 import csv
 import sqlite3
-import time
 
 import pytest
 
 from db.database import Database
-from db.models import Application, FeedEvent
-
+from db.models import Application
 
 # ---------------------------------------------------------------------------
 # Fixtures & helpers
@@ -414,3 +412,38 @@ class TestAnalytics:
         today_entry = daily[-1]
         assert "date" in today_entry
         assert today_entry["count"] == 2
+
+
+# ===================================================================
+# D-5 — SQLite WAL Mode + Busy Timeout
+# ===================================================================
+
+
+class TestSQLiteWALMode:
+    """D-5: SQLite WAL journal mode and busy timeout."""
+
+    def test_wal_mode_enabled(self, db: Database):
+        """D-5: Database connections use WAL journal mode.  # AC-D5.1"""
+        with db._connect() as conn:
+            mode = conn.execute("PRAGMA journal_mode").fetchone()[0]
+            assert mode.lower() == "wal"
+
+    def test_busy_timeout_set(self, db: Database):
+        """D-5: Database connections set busy_timeout=5000.  # AC-D5.2"""
+        with db._connect() as conn:
+            timeout = conn.execute("PRAGMA busy_timeout").fetchone()[0]
+            assert timeout == 5000
+
+    def test_concurrent_reads_with_wal(self, db: Database):
+        """D-5: WAL allows concurrent reads while writing.  # AC-D5.3"""
+        insert_sample(db, external_id="wal-1")
+        # Open two connections simultaneously — WAL allows this
+        conn1 = db._connect()
+        conn2 = db._connect()
+        try:
+            rows1 = conn1.execute("SELECT COUNT(*) FROM applications").fetchone()[0]
+            rows2 = conn2.execute("SELECT COUNT(*) FROM applications").fetchone()[0]
+            assert rows1 == rows2 == 1
+        finally:
+            conn1.close()
+            conn2.close()

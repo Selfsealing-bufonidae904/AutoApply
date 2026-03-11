@@ -1,4 +1,7 @@
-"""Main bot loop — search, filter, generate documents, apply, repeat."""
+"""Main bot loop — search, filter, generate documents, apply, repeat.
+
+Implements: FR-042 (bot main loop), FR-050 (search-filter-generate-apply pipeline).
+"""
 
 from __future__ import annotations
 
@@ -9,8 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from bot.apply.base import ApplyResult
 from bot.apply.ashby import AshbyApplier
+from bot.apply.base import ApplyResult, BaseApplier
 from bot.apply.greenhouse import GreenhouseApplier
 from bot.apply.indeed import IndeedApplier
 from bot.apply.lever import LeverApplier
@@ -22,9 +25,9 @@ from bot.search.linkedin import LinkedInSearcher
 from core.filter import ScoredJob, detect_ats, score_job
 
 if TYPE_CHECKING:
+    from bot.state import BotState
     from config.settings import AppConfig
     from db.database import Database
-    from bot.state import BotState
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +36,7 @@ SEARCHERS = {
     "indeed": IndeedSearcher,
 }
 
-APPLIERS = {
+APPLIERS: dict[str, type[BaseApplier]] = {
     "linkedin": LinkedInApplier,
     "indeed": IndeedApplier,
     "greenhouse": GreenhouseApplier,
@@ -70,8 +73,8 @@ def run_bot(
         if emit_func:
             try:
                 emit_func("feed_event", data)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Failed to emit feed event via SocketIO: %s", e)
         try:
             db.save_feed_event(
                 event_type=event_type,
@@ -80,8 +83,8 @@ def run_bot(
                 platform=kwargs.get("platform"),
                 message=kwargs.get("message"),
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to save feed event to DB: %s", e)
 
     try:
         browser = BrowserManager(config)
@@ -191,8 +194,8 @@ def run_bot(
                                 # User will apply themselves — save as manual_required
                                 manual_result = ApplyResult(
                                     success=False,
-                                    status="manual_required",
-                                    message="User chose to apply manually",
+                                    manual_required=True,
+                                    error_message="User chose to apply manually",
                                 )
                                 _save_application(
                                     db, scored, resume_path, cl_path,
@@ -277,10 +280,10 @@ def run_bot(
                 )
                 _interruptible_sleep(state, config.bot.search_interval_seconds)
 
-    except Exception as e:
-        logger.error("Bot crashed: %s", e)
+    except Exception as exc:
+        logger.exception("Bot crashed")
         state.increment_errors()
-        emit("ERROR", message=f"Bot crashed: {e}")
+        emit("ERROR", message=f"Bot crashed: {exc}")
     finally:
         if browser:
             browser.close()

@@ -1,13 +1,16 @@
 """AI Engine — generates tailored resumes and cover letters via LLM APIs.
 
+Implements: FR-031 (AI availability check), FR-032 (document generation),
+            FR-074 (multi-provider LLM).
+
 Supports Anthropic, OpenAI, Google (Gemini), and DeepSeek as providers.
 Falls back to static templates when no API key is configured.
 """
 
 from __future__ import annotations
 
-import json
 import logging
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -138,8 +141,15 @@ def validate_api_key(provider: str, api_key: str, model: str | None = None) -> b
     try:
         _call_llm(provider, api_key, model, "Reply with OK", timeout=15)
         return True
-    except Exception:
+    except Exception as e:
+        logger.debug("API key validation failed for %s: %s", provider, e)
         return False
+
+
+# Retry configuration (D-6)
+MAX_RETRIES = 3
+RETRY_BASE_DELAY = 1.0  # seconds
+RETRYABLE_STATUS_CODES = {429, 500, 502, 503, 504}
 
 
 def _call_llm(
@@ -149,7 +159,11 @@ def _call_llm(
     prompt: str,
     timeout: int = 120,
 ) -> str:
-    """Call an LLM API and return the text response.
+    """Call an LLM API with retry and exponential backoff (D-6).
+
+    Retries up to MAX_RETRIES times on transient errors (429, 5xx, network
+    errors) with exponential backoff (1s, 2s, 4s). Non-retryable errors
+    (401, 403, 400) fail immediately.
 
     Args:
         provider: One of "anthropic", "openai", "google", "deepseek".
@@ -162,16 +176,48 @@ def _call_llm(
         The generated text content.
 
     Raises:
-        RuntimeError: If the API call fails.
+        RuntimeError: If the API call fails after all retries.
     """
-    if provider == "anthropic":
-        return _call_anthropic(api_key, model, prompt, timeout)
-    elif provider == "google":
-        return _call_google(api_key, model, prompt, timeout)
-    elif provider in ("openai", "deepseek"):
-        return _call_openai_compatible(provider, api_key, model, prompt, timeout)
-    else:
+    def call_fn() -> str:
+        if provider == "anthropic":
+            return _call_anthropic(api_key, model, prompt, timeout)
+        elif provider == "google":
+            return _call_google(api_key, model, prompt, timeout)
+        elif provider in ("openai", "deepseek"):
+            return _call_openai_compatible(provider, api_key, model, prompt, timeout)
         raise RuntimeError(f"Unsupported LLM provider: {provider}")
+
+    if provider not in ("anthropic", "google", "openai", "deepseek"):
+        raise RuntimeError(f"Unsupported LLM provider: {provider}")
+
+    last_error: Exception | None = None
+    for attempt in range(MAX_RETRIES + 1):
+        try:
+            return call_fn()
+        except RuntimeError as e:
+            last_error = e
+            # Don't retry auth/client errors
+            error_msg = str(e)
+            if any(f"({code})" in error_msg for code in (400, 401, 403, 404)):
+                raise
+            if attempt < MAX_RETRIES:
+                delay = RETRY_BASE_DELAY * (2 ** attempt)
+                logger.warning(
+                    "LLM call attempt %d/%d failed (%s), retrying in %.1fs...",
+                    attempt + 1, MAX_RETRIES + 1, e, delay,
+                )
+                time.sleep(delay)
+        except (requests.ConnectionError, requests.Timeout) as e:
+            last_error = e
+            if attempt < MAX_RETRIES:
+                delay = RETRY_BASE_DELAY * (2 ** attempt)
+                logger.warning(
+                    "LLM call attempt %d/%d failed (%s), retrying in %.1fs...",
+                    attempt + 1, MAX_RETRIES + 1, type(e).__name__, delay,
+                )
+                time.sleep(delay)
+
+    raise RuntimeError(f"LLM call failed after {MAX_RETRIES + 1} attempts: {last_error}")
 
 
 def _call_anthropic(api_key: str, model: str, prompt: str, timeout: int) -> str:
@@ -193,7 +239,7 @@ def _call_anthropic(api_key: str, model: str, prompt: str, timeout: int) -> str:
     if resp.status_code != 200:
         _raise_api_error("Anthropic", resp)
     data = resp.json()
-    return data["content"][0]["text"].strip()
+    return str(data["content"][0]["text"]).strip()
 
 
 def _call_openai_compatible(
@@ -216,7 +262,7 @@ def _call_openai_compatible(
     if resp.status_code != 200:
         _raise_api_error(provider.title(), resp)
     data = resp.json()
-    return data["choices"][0]["message"]["content"].strip()
+    return str(data["choices"][0]["message"]["content"]).strip()
 
 
 def _call_google(api_key: str, model: str, prompt: str, timeout: int) -> str:
@@ -235,7 +281,7 @@ def _call_google(api_key: str, model: str, prompt: str, timeout: int) -> str:
     if resp.status_code != 200:
         _raise_api_error("Google", resp)
     data = resp.json()
-    return data["candidates"][0]["content"]["parts"][0]["text"].strip()
+    return str(data["candidates"][0]["content"]["parts"][0]["text"]).strip()
 
 
 def _raise_api_error(provider: str, resp: requests.Response) -> None:
@@ -245,7 +291,8 @@ def _raise_api_error(provider: str, resp: requests.Response) -> None:
         msg = body.get("error", {})
         if isinstance(msg, dict):
             msg = msg.get("message", resp.text)
-    except Exception:
+    except Exception as e:
+        logger.debug("Failed to parse API error response: %s", e)
         msg = resp.text
     raise RuntimeError(f"{provider} API error ({resp.status_code}): {msg}")
 

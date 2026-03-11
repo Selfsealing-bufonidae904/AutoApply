@@ -1,4 +1,7 @@
-"""Lever ATS application automation."""
+"""Lever ATS application automation.
+
+Implements: FR-058 (Lever ATS).
+"""
 
 from __future__ import annotations
 

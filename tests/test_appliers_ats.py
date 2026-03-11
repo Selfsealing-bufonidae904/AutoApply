@@ -9,16 +9,12 @@ Requirement traceability:
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 
-import pytest
-
-from bot.apply.base import ApplyResult
 from bot.apply.greenhouse import GreenhouseApplier
 from bot.apply.lever import LeverApplier
 from bot.search.base import RawJob
 from core.filter import ScoredJob
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures

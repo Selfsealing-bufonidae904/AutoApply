@@ -42,6 +42,8 @@ def app_client(tmp_path, monkeypatch):
     """Yield (test_client, db, tmp_path) with all paths redirected to tmp_path."""
     monkeypatch.setattr("config.settings.get_data_dir", lambda: tmp_path)
     monkeypatch.setattr("app.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("routes.profile.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("routes.applications.get_data_dir", lambda: tmp_path)
 
     (tmp_path / "profile" / "experiences").mkdir(parents=True)
 
@@ -65,6 +67,7 @@ def app_client(tmp_path, monkeypatch):
 
     test_db = Database(tmp_path / "test.db")
     monkeypatch.setattr("app.db", test_db)
+    monkeypatch.setattr("app_state.db", test_db)
 
     from app import app
 
@@ -460,8 +463,9 @@ class TestSaveJobDescription:
 
     def test_returns_none_on_failure(self, tmp_path):
         """Returns None when saving fails (e.g., read-only dir)."""
-        from bot.bot import _save_job_description
         from unittest.mock import patch
+
+        from bot.bot import _save_job_description
 
         with patch("bot.bot.Path.mkdir", side_effect=OSError("Permission denied")):
             result = _save_job_description(None, tmp_path / "nonexistent")

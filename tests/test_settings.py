@@ -23,7 +23,6 @@ from config.settings import (
     save_config,
 )
 
-
 # ─── Model Tests ────────────────────────────────────────────────────────────
 
 

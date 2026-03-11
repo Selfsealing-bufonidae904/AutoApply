@@ -1,9 +1,11 @@
-"""Indeed Quick Apply automation."""
+"""Indeed Quick Apply automation.
+
+Implements: FR-048 (Indeed Quick Apply).
+"""
 
 from __future__ import annotations
 
 import logging
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 

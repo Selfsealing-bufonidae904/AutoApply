@@ -1,9 +1,41 @@
+"""Application configuration and settings models.
+
+Implements: FR-001 (data directory), FR-003 (configuration model),
+            NFR-QW1 (keyring integration).
+"""
+
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 from pydantic import BaseModel, model_validator
+
+_logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Keyring helpers — lazy-checked, graceful fallback to plaintext
+# ---------------------------------------------------------------------------
+
+_keyring_available: bool | None = None  # lazy-init sentinel
+KEYRING_SERVICE = "autoapply"
+KEYRING_KEY_NAME = "llm_api_key"
+
+
+def _check_keyring() -> bool:
+    """Return True if the OS keyring backend is usable. Result is cached."""
+    global _keyring_available
+    if _keyring_available is not None:
+        return _keyring_available
+    try:
+        import keyring
+        keyring.get_password(KEYRING_SERVICE, "__probe__")
+        _keyring_available = True
+    except Exception:
+        _logger.warning("keyring unavailable — API key stored in plaintext config")
+        _keyring_available = False
+    return _keyring_available
 
 
 class UserProfile(BaseModel):
@@ -120,15 +152,47 @@ def load_config() -> AppConfig | None:
         return None
     with open(config_path, "r", encoding="utf-8") as f:
         data = json.load(f)
-    return AppConfig(**data)
+    config = AppConfig(**data)
+
+    # Retrieve API key from keyring if available
+    if _check_keyring():
+        import keyring
+
+        stored_key = keyring.get_password(KEYRING_SERVICE, KEYRING_KEY_NAME)
+        if stored_key:
+            config.llm.api_key = stored_key
+        elif config.llm.api_key:
+            # Migration: move plaintext key into keyring
+            keyring.set_password(
+                KEYRING_SERVICE, KEYRING_KEY_NAME, config.llm.api_key
+            )
+            _save_config_raw(config, strip_api_key=True)
+            _logger.info("Migrated API key from config.json to OS keyring")
+
+    return config
 
 
 def save_config(config: AppConfig) -> None:
+    # Store API key in keyring if possible
+    if config.llm.api_key and _check_keyring():
+        import keyring
+
+        keyring.set_password(
+            KEYRING_SERVICE, KEYRING_KEY_NAME, config.llm.api_key
+        )
+
+    _save_config_raw(config, strip_api_key=_check_keyring())
+
+
+def _save_config_raw(config: AppConfig, strip_api_key: bool = False) -> None:
     data_dir = get_data_dir()
     data_dir.mkdir(parents=True, exist_ok=True)
     config_path = data_dir / "config.json"
+    dump = config.model_dump()
+    if strip_api_key:
+        dump.get("llm", {})["api_key"] = ""
     with open(config_path, "w", encoding="utf-8") as f:
-        json.dump(config.model_dump(), f, indent=2)
+        json.dump(dump, f, indent=2)
 
 
 def is_first_run() -> bool:

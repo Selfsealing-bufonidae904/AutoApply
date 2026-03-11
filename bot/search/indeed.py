@@ -1,4 +1,7 @@
-"""Indeed job search engine using Playwright."""
+"""Indeed job search engine using Playwright.
+
+Implements: FR-044 (Indeed search).
+"""
 
 from __future__ import annotations
 
@@ -123,7 +126,8 @@ class IndeedSearcher(BaseSearcher):
         try:
             title_link.click()
             time.sleep(1)
-        except Exception:
+        except Exception as e:
+            logger.debug("Indeed: failed to click job title: %s", e)
             pass
 
         # Company name

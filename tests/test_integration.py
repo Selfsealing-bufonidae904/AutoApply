@@ -19,12 +19,10 @@ from __future__ import annotations
 
 import json
 import time
-from pathlib import Path
 
 import pytest
 
 from db.database import Database
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -36,6 +34,7 @@ def env(tmp_path, monkeypatch):
     """Full integration environment with Flask client, real DB, and real filesystem."""
     monkeypatch.setattr("config.settings.get_data_dir", lambda: tmp_path)
     monkeypatch.setattr("app.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("routes.profile.get_data_dir", lambda: tmp_path)
     (tmp_path / "profile" / "experiences").mkdir(parents=True)
 
     # Write a minimal config so load_config() returns a valid AppConfig
@@ -62,6 +61,7 @@ def env(tmp_path, monkeypatch):
 
     test_db = Database(tmp_path / "test.db")
     monkeypatch.setattr("app.db", test_db)
+    monkeypatch.setattr("app_state.db", test_db)
 
     from app import app, bot_state
 
@@ -244,7 +244,7 @@ class TestApplicationWorkflow:
             status="applied",
             error_message=None,
         )
-        id2 = db.save_application(
+        db.save_application(
             external_id="in-002",
             platform="indeed",
             job_title="Backend Dev",

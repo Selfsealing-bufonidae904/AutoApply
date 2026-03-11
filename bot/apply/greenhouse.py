@@ -1,4 +1,7 @@
-"""Greenhouse ATS application automation."""
+"""Greenhouse ATS application automation.
+
+Implements: FR-057 (Greenhouse ATS).
+"""
 
 from __future__ import annotations
 

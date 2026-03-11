@@ -1,5 +1,7 @@
 """Workday ATS application automation.
 
+Implements: FR-070 (Workday ATS).
+
 Workday is a React SPA using ``data-automation-id`` attributes for selectors.
 Application pages live at ``*.myworkdayjobs.com/*/job/*`` and present a
 multi-step form: Sign In/Create Account → My Information → My Experience →
@@ -9,7 +11,6 @@ Application Questions → Voluntary Disclosures → Self-Identification → Revi
 from __future__ import annotations
 
 import logging
-import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -316,7 +317,8 @@ class WorkdayApplier(BaseApplier):
         for label in labels:
             try:
                 label_text = label.inner_text().lower()
-            except Exception:
+            except Exception as e:
+                logger.debug("Workday: failed to read label text: %s", e)
                 continue
 
             for keyword, answer in question_map.items():
@@ -337,7 +339,6 @@ class WorkdayApplier(BaseApplier):
 
     def _fill_voluntary_disclosures(self, profile) -> None:
         """Handle voluntary disclosures (EEO) — typically skip or select defaults."""
-        page = self.page
         answers = profile.screening_answers
 
         gender = answers.get("gender", "")
@@ -412,7 +413,8 @@ class WorkdayApplier(BaseApplier):
                 el = page.query_selector(selector)
                 if el and el.is_visible():
                     return True
-            except Exception:
+            except Exception as e:
+                logger.debug("Workday: error checking element %s: %s", selector, e)
                 continue
         return False
 
@@ -427,8 +429,9 @@ class WorkdayApplier(BaseApplier):
             el = page.query_selector(selector)
             if el and el.is_visible():
                 try:
-                    return el.inner_text()[:200]
-                except Exception:
+                    return str(el.inner_text())[:200]
+                except Exception as e:
+                    logger.debug("Workday: failed to read error text: %s", e)
                     return "Unknown error"
         return None
 
@@ -458,7 +461,8 @@ class WorkdayApplier(BaseApplier):
         # Wait briefly for the listbox to appear, then select matching option
         try:
             page.wait_for_selector('[role="listbox"]', timeout=3000)
-        except Exception:
+        except Exception as e:
+            logger.debug("Workday: listbox did not appear for dropdown: %s", e)
             return
 
         # Find the option that matches the value

@@ -5,6 +5,12 @@ from __future__ import annotations
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _dev_mode_auth_bypass(monkeypatch):
+    """Bypass API auth in all tests by setting AUTOAPPLY_DEV."""
+    monkeypatch.setenv("AUTOAPPLY_DEV", "1")
+
+
 @pytest.fixture
 def mock_data_dir(tmp_path, monkeypatch):
     """Redirect get_data_dir() to a temporary directory for filesystem isolation."""

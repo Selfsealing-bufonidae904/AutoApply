@@ -1,5 +1,7 @@
 """Resume PDF renderer — converts Markdown to ATS-safe PDF via ReportLab.
 
+Implements: FR-033 (PDF resume generation).
+
 Supports a limited Markdown subset designed for resume formatting:
   # Name          → 18pt bold
   ## Section      → 12pt bold + thin rule
@@ -18,7 +20,6 @@ from pathlib import Path
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.pdfgen.canvas import Canvas
-
 
 # Font constants — Helvetica only for ATS compatibility
 FONT_NORMAL = "Helvetica"
@@ -58,13 +59,13 @@ def render_resume_to_pdf(resume_md_text: str, resume_pdf_path: Path) -> None:
 
     def new_page() -> float:
         c.showPage()
-        return page_height - MARGIN
+        return float(page_height - MARGIN)
 
     def check_space(needed: float) -> float:
         nonlocal y
         if y - needed < MARGIN:
             y = new_page()
-        return y
+        return float(y)
 
     def draw_text(text: str, font: str, size: float, x: float, max_width: float) -> None:
         """Draw text with word wrapping and inline bold support."""
@@ -190,7 +191,6 @@ def _draw_line_with_bold(
     """Draw a single line with inline **bold** support."""
     parts = BOLD_RE.split(text)
     cursor_x = x
-    is_bold = False
 
     # BOLD_RE.split alternates: [normal, bold_content, normal, bold_content, ...]
     for i, part in enumerate(parts):

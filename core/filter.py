@@ -1,5 +1,7 @@
 """Job filter and scoring engine.
 
+Implements: FR-044 (job scoring), FR-045 (ATS detection).
+
 Scores jobs 0-100 based on title match, salary match, location match,
 and keyword match. Applies hard disqualifiers for excluded keywords,
 blacklisted companies, and duplicate jobs.

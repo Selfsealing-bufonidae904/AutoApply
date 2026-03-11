@@ -6,7 +6,33 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+- **Flask SECRET_KEY**: Now cryptographically random (`secrets.token_hex(32)`), persisted to `~/.autoapply/.flask_secret` with restricted permissions. Replaces hardcoded key. (NFR-QW1)
+- **API key keyring storage**: API keys are stored in the OS keyring (Windows Credential Locker, macOS Keychain, Linux SecretService) when available. Falls back to plaintext `config.json` gracefully. Existing plaintext keys are auto-migrated on first load. (NFR-QW1)
+- **API authentication**: All `/api/*` endpoints now require `Authorization: Bearer <token>` header. Token auto-generated at `~/.autoapply/.api_token` on first run. `/api/health` exempt. Dev mode (`AUTOAPPLY_DEV=1`) bypasses auth. Token injected into frontend automatically. (NFR-ME2)
+- **CORS lockdown**: SocketIO `cors_allowed_origins` changed from `"*"` to localhost-only (`http://localhost:*`, `http://127.0.0.1:*`). (NFR-ME5)
+- **Input validation**: `PUT /api/config` now catches Pydantic `ValidationError` and returns 400 instead of 500. `PATCH /api/applications/:id` validates `status` against allowed set. (NFR-ME3)
+- **Error handler hardening**: Added 400 error handler. Generic exception handler now logs full traceback at ERROR level and returns only generic message (no stack traces). (NFR-ME4)
+
+### Fixed
+- **Graceful shutdown**: App now cleanly tears down all resources (bot thread, scheduler, login browser, database) on SIGINT/SIGTERM and via `/api/shutdown`. Idempotent shutdown handler registered via `atexit` and signal handlers. Prevents orphaned Chromium processes on exit. (NFR-ME8)
+- **Swallowed exceptions**: All 16 bare `except: pass` sites across 8 files now log at appropriate levels (DEBUG for teardown/UI, WARNING for data loss). No silent exception suppression remains. (NFR-QW2)
+- **Race condition on bot thread**: `_bot_thread` global now protected by `threading.Lock`. All reads/writes serialized. `_scheduler_start_bot()` returns status string for cleaner route logic. (NFR-QW4)
+- **Temp file leak in CSV export**: `export_applications()` now reads CSV into `BytesIO` buffer and deletes the temp file in a `finally` block. No orphaned temp files. (NFR-QW5)
+
+### Added
+- **Structured logging**: `run.py` configures root logger at startup with console + rotating file handler (`~/.autoapply/backend.log`, 5MB, 3 backups). Set `AUTOAPPLY_DEBUG=1` for DEBUG level. (NFR-QW3)
+- **GitHub Actions CI**: Added `.github/workflows/ci.yml` — runs `ruff check`, `pytest`, and `pip-audit` in parallel jobs on every push to master and on PRs. (NFR-ME1, NFR-ME6)
+- **Dependency security scanning**: `pip-audit` runs in CI with `--strict` flag — build fails on any known vulnerability. Added to dev dependencies. (NFR-ME6)
+- **Dependabot**: Added `.github/dependabot.yml` — weekly automated PRs for pip and GitHub Actions dependency updates. (NFR-ME6)
+- **Python tooling (pyproject.toml)**: Consolidated project metadata, dependencies, ruff config, and pytest config into `pyproject.toml`. CI now installs via `pip install -e ".[dev]"`. (NFR-ME3)
+- **Pre-commit hooks**: Added `.pre-commit-config.yaml` with ruff lint and format hooks. (NFR-ME3)
+- **Lint cleanup**: Fixed 64 ruff lint issues across 14 files — unused imports (F401), unused variables (F841), undefined name reference (F821), import sorting (I001). Codebase now passes `ruff check` clean. (NFR-ME3)
+- **Pinned dependency versions**: All 13 runtime dependencies pinned to exact versions (`==`) in `pyproject.toml`. Eliminates supply-chain drift from unpinned `>=` ranges. (NFR-ME6)
+- **mypy type checking**: Added mypy configuration to `pyproject.toml` with `check_untyped_defs = true`. All 37 source files pass with zero errors. mypy runs in CI lint job. Fixed 21 type errors including null-safety on `Database | None` routes, `Any`-return from API JSON parsing, and a latent bug in `ApplyResult` construction with invalid kwargs. (NFR-ME7)
+
 ### Changed
+- **Blueprint architecture**: Split 852-line `app.py` monolith into 7 Flask Blueprints (`routes/bot.py`, `routes/applications.py`, `routes/config.py`, `routes/profile.py`, `routes/login.py`, `routes/analytics.py`, `routes/lifecycle.py`). Shared state extracted to `app_state.py`. `create_app()` factory pattern. All API contracts preserved — zero endpoint changes. (NFR-ME4)
 - **Multi-provider LLM API**: Replaced Claude Code CLI integration with direct HTTP API calls to Anthropic, OpenAI, Google Gemini, and DeepSeek. Configure your preferred provider and API key in Settings → AI Provider. (FR-031 through FR-036)
 - **Electron-only distribution**: Removed browser mode (`--no-browser` flag, auto-browser-open). AutoApply now launches exclusively as an Electron desktop app.
 - **AI status field**: `claude_code_available` renamed to `ai_available` across all API responses.

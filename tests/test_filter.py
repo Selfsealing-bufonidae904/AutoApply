@@ -1,14 +1,16 @@
-"""Unit tests for core.filter — job scoring and ATS detection."""
+"""Unit tests for core.filter — job scoring and ATS detection.
+
+Requirement traceability:
+    FR-044  Job scoring engine (score_job, _extract_salary_number)
+    FR-045  ATS platform detection (detect_ats, ATS_FINGERPRINTS)
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from unittest.mock import MagicMock
 
-import pytest
-
-from core.filter import ScoredJob, detect_ats, score_job, _extract_salary_number
-
+from core.filter import ScoredJob, _extract_salary_number, detect_ats, score_job
 
 # ---------------------------------------------------------------------------
 # Helpers

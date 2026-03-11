@@ -1,11 +1,14 @@
-"""Base classes for job application automation."""
+"""Base classes for job application automation.
+
+Implements: FR-046 (applier abstraction).
+"""
 
 from __future__ import annotations
 
 import random
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 

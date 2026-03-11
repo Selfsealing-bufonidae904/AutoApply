@@ -1,9 +1,66 @@
 from __future__ import annotations
 
+import json as _json
+import logging
 import os
+import signal
 import socket
 import sys
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
+
+
+class JsonFormatter(logging.Formatter):
+    """Structured JSON log formatter for machine-readable log output.
+
+    Produces one JSON object per line with fields:
+    timestamp, level, logger, message, and any extra fields from the LogRecord.
+    """
+
+    def format(self, record: logging.LogRecord) -> str:
+        entry: dict[str, object] = {
+            "timestamp": self.formatTime(record, "%Y-%m-%dT%H:%M:%S")
+            + f".{int(record.msecs):03d}Z",
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+        }
+        if record.exc_info and record.exc_info[1] is not None:
+            entry["exception"] = self.formatException(record.exc_info)
+        if record.stack_info:
+            entry["stack_info"] = record.stack_info
+        return _json.dumps(entry, default=str)
+
+
+def _configure_logging(data_dir: Path) -> None:
+    """Set up application-wide logging with console + rotating file output.
+
+    Set AUTOAPPLY_LOG_FORMAT=json for structured JSON output (D-7).
+    Set AUTOAPPLY_DEBUG=1 for DEBUG level.
+    """
+    level = logging.DEBUG if os.environ.get("AUTOAPPLY_DEBUG") else logging.INFO
+    use_json = os.environ.get("AUTOAPPLY_LOG_FORMAT", "").lower() == "json"
+
+    if use_json:
+        formatter: logging.Formatter = JsonFormatter()
+    else:
+        fmt = "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+        datefmt = "%Y-%m-%d %H:%M:%S"
+        formatter = logging.Formatter(fmt, datefmt=datefmt)
+
+    root = logging.getLogger()
+    root.setLevel(level)
+
+    console = logging.StreamHandler()
+    console.setFormatter(formatter)
+    root.addHandler(console)
+
+    log_path = data_dir / "backend.log"
+    file_handler = RotatingFileHandler(
+        str(log_path), maxBytes=5_000_000, backupCount=3, encoding="utf-8"
+    )
+    file_handler.setFormatter(formatter)
+    root.addHandler(file_handler)
 
 
 def _find_free_port(start: int = 5000, end: int = 5010) -> int:
@@ -31,6 +88,9 @@ def main() -> None:
     from config.settings import get_data_dir
 
     data_dir = get_data_dir()
+    data_dir.mkdir(parents=True, exist_ok=True)
+    _configure_logging(data_dir)
+
     (data_dir / "profile" / "experiences").mkdir(parents=True, exist_ok=True)
     (data_dir / "profile" / "jobs").mkdir(parents=True, exist_ok=True)
     (data_dir / "profile" / "resumes").mkdir(parents=True, exist_ok=True)
@@ -61,7 +121,18 @@ def main() -> None:
             encoding="utf-8",
         )
 
-    from app import app, socketio
+    from app import app, graceful_shutdown, socketio
+
+    # Register signal handlers for graceful shutdown (NFR-ME8)
+    def _signal_handler(signum, frame):
+        sig_name = signal.Signals(signum).name
+        logging.getLogger(__name__).info("Received %s, shutting down...", sig_name)
+        graceful_shutdown()
+        sys.exit(0)
+
+    signal.signal(signal.SIGINT, _signal_handler)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, _signal_handler)
 
     print(f"AutoApply starting at http://localhost:{port}")
     socketio.run(app, host="127.0.0.1", port=port, debug=False)

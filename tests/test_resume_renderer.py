@@ -5,12 +5,7 @@ Tests cover: PDF generation from Markdown, formatting rules, edge cases.
 
 from __future__ import annotations
 
-from pathlib import Path
-
-import pytest
-
 from core.resume_renderer import render_resume_to_pdf
-
 
 SAMPLE_RESUME_MD = """# Jane Smith
 jane@example.com | 555-9876 | San Francisco, CA | linkedin.com/in/janesmith

@@ -1,765 +1,334 @@
+"""AutoApply Flask application — factory pattern with Blueprint registration.
+
+Implements: FR-080 (Blueprint architecture), FR-082 (create_app factory),
+            NFR-ME2 (auth middleware), NFR-ME4 (error handlers),
+            NFR-ME8 (graceful shutdown), NFR-ME9 (rate limiting).
+"""
+
 from __future__ import annotations
 
+import atexit
 import logging
 import os
-import re
-import signal
-import subprocess
-import tempfile
+import secrets as _secrets_mod
 import threading
-from datetime import datetime
-from pathlib import Path
+import time
 
-from flask import Flask, jsonify, render_template, request, send_file
-from flask_socketio import SocketIO, emit
+from flask import Flask, jsonify, request
+from flask_socketio import SocketIO
 
-from config.settings import (
-    AppConfig,
-    ScheduleConfig,
-    get_data_dir,
-    is_first_run,
-    load_config,
-    save_config,
-)
-from core.ai_engine import check_ai_available as _check_ai_available
-from core.ai_engine import validate_api_key as _validate_api_key
-from core.scheduler import BotScheduler
+import app_state
+from config.settings import get_data_dir
+from core.i18n import t
 from db.database import Database
-from bot.state import BotState
 
-app = Flask(__name__)
-app.config["SECRET_KEY"] = "autoapply-secret-key"
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode="gevent")
-db = Database(get_data_dir() / "autoapply.db")
-bot_state = BotState()
-_bot_thread: threading.Thread | None = None
+logger = logging.getLogger(__name__)
 
 
-def _get_schedule() -> ScheduleConfig | None:
-    """Get current schedule config (used by scheduler)."""
-    config = load_config()
-    if config is None:
+def _get_or_create_secret_key() -> str:
+    """Generate or load a persistent Flask SECRET_KEY."""
+    secret_path = get_data_dir() / ".flask_secret"
+    if secret_path.exists():
+        return secret_path.read_text(encoding="utf-8").strip()
+    key = _secrets_mod.token_hex(32)
+    get_data_dir().mkdir(parents=True, exist_ok=True)
+    secret_path.write_text(key, encoding="utf-8")
+    try:
+        secret_path.chmod(0o600)
+    except OSError:
+        pass  # Windows doesn't support Unix permissions
+    return key
+
+
+def _get_or_create_api_token() -> str:
+    """Generate or load a persistent API auth token."""
+    token_path = get_data_dir() / ".api_token"
+    if token_path.exists():
+        return token_path.read_text(encoding="utf-8").strip()
+    token = _secrets_mod.token_hex(32)
+    get_data_dir().mkdir(parents=True, exist_ok=True)
+    token_path.write_text(token, encoding="utf-8")
+    try:
+        token_path.chmod(0o600)
+    except OSError:
+        pass  # Windows doesn't support Unix permissions
+    return token
+
+
+# ---------------------------------------------------------------------------
+# Error handlers and auth middleware (module-level for inspect/test access)
+# ---------------------------------------------------------------------------
+
+def _check_auth():
+    """Verify API token on all /api/* endpoints (except health)."""
+    if os.environ.get("AUTOAPPLY_DEV"):
         return None
-    return config.bot.schedule
+    if request.path == "/" or request.path.startswith("/static"):
+        return None
+    if request.path == "/api/health":
+        return None
+    if not request.path.startswith("/api/"):
+        return None
+    auth = request.headers.get("Authorization", "")
+    if auth != f"Bearer {app_state.api_token}":
+        return jsonify({"error": t("errors.unauthorized")}), 401
 
 
-def _scheduler_start_bot() -> None:
-    """Start bot from scheduler (delegates to bot_start logic)."""
-    global _bot_thread
-    if _bot_thread and _bot_thread.is_alive():
-        return
-    config = load_config()
-    if config is None:
-        return
-    bot_state.start()
+# ---------------------------------------------------------------------------
+# Rate limiter (NFR-ME9) — in-memory token bucket, no external dependencies
+# ---------------------------------------------------------------------------
 
-    def _run():
-        from bot.bot import run_bot
+class _RateLimiter:
+    """Simple token bucket rate limiter keyed by (client_ip, bucket)."""
 
-        def _emit(event_name, data):
-            socketio.emit(event_name, data)
-            status_dict = bot_state.get_status_dict()
-            status_dict["ai_available"] = check_ai_available()
-            socketio.emit("bot_status", status_dict)
+    # Bucket config: (max_tokens, refill_per_second)
+    BUCKETS = {
+        "bot": (10, 10 / 60),       # 10 req/min for bot control
+        "write": (30, 30 / 60),     # 30 req/min for mutations
+        "read": (60, 60 / 60),      # 60 req/min for reads
+    }
 
-        try:
-            run_bot(state=bot_state, config=config, db=db, emit_func=_emit)
-        finally:
-            bot_state.stop()
-            status_dict = bot_state.get_status_dict()
-            status_dict["ai_available"] = check_ai_available()
-            socketio.emit("bot_status", status_dict)
+    def __init__(self):
+        self._state: dict[tuple[str, str], tuple[float, float]] = {}
+        self._lock = threading.Lock()
 
-    _bot_thread = threading.Thread(target=_run, daemon=True, name="bot-worker")
-    _bot_thread.start()
+    def _classify(self, path: str, method: str) -> str | None:
+        """Classify a request into a rate limit bucket."""
+        if not path.startswith("/api/"):
+            return None
+        if path == "/api/health":
+            return None
+        if path.startswith("/api/bot/"):
+            return "bot"
+        if method in ("POST", "PUT", "PATCH", "DELETE"):
+            return "write"
+        return "read"
 
+    def check(self, client_ip: str, path: str, method: str) -> int | None:
+        """Check rate limit. Returns None if allowed, or seconds to retry."""
+        bucket_name = self._classify(path, method)
+        if bucket_name is None:
+            return None
 
-def _scheduler_stop_bot() -> None:
-    """Stop bot from scheduler."""
-    bot_state.stop()
-    if _bot_thread and _bot_thread.is_alive():
-        _bot_thread.join(timeout=10)
+        max_tokens, refill_rate = self.BUCKETS[bucket_name]
+        key = (client_ip, bucket_name)
+        now = time.monotonic()
 
+        with self._lock:
+            tokens, last_time = self._state.get(key, (max_tokens, now))
+            elapsed = now - last_time
+            tokens = min(max_tokens, tokens + elapsed * refill_rate)
 
-def _is_bot_running() -> bool:
-    """Check if bot thread is alive."""
-    return _bot_thread is not None and _bot_thread.is_alive()
-
-
-bot_scheduler = BotScheduler(
-    get_schedule=_get_schedule,
-    start_bot=_scheduler_start_bot,
-    stop_bot=_scheduler_stop_bot,
-    is_bot_running=_is_bot_running,
-)
-
-SAFE_FILENAME_RE = re.compile(r"^[a-zA-Z0-9_\- ]+\.txt$")
-
-
-def check_ai_available() -> bool:
-    """Check if an AI provider is configured with an API key."""
-    config = load_config()
-    if not config:
-        return False
-    return _check_ai_available(config.llm)
+            if tokens >= 1.0:
+                self._state[key] = (tokens - 1.0, now)
+                return None
+            else:
+                self._state[key] = (tokens, now)
+                wait = (1.0 - tokens) / refill_rate
+                return int(wait) + 1
 
 
-def validate_filename(filename: str) -> str | None:
-    """Returns error message if filename is invalid, None if valid."""
-    if not filename:
-        return "Filename is required"
-    if ".." in filename or "/" in filename or "\\" in filename:
-        return "Invalid filename"
-    if not SAFE_FILENAME_RE.match(filename):
-        return "Invalid filename. Use only letters, numbers, hyphens, underscores, spaces, and .txt extension"
-    return None
+_rate_limiter = _RateLimiter()
 
 
-@app.errorhandler(Exception)
+def _check_rate_limit():
+    """Rate limit middleware — returns 429 if limit exceeded."""
+    if os.environ.get("AUTOAPPLY_DEV"):
+        return None
+    retry_after = _rate_limiter.check(
+        request.remote_addr or "unknown", request.path, request.method
+    )
+    if retry_after is not None:
+        resp = jsonify({"error": t("errors.too_many_requests")})
+        resp.status_code = 429
+        resp.headers["Retry-After"] = str(retry_after)
+        return resp
+
+
 def handle_exception(e):
     if hasattr(e, "code") and isinstance(e.code, int):
-        return jsonify({"error": str(e)}), e.code
-    return jsonify({"error": "Internal server error"}), 500
+        desc = getattr(e, "description", str(e))
+        return jsonify({"error": desc}), e.code
+    logger.exception("Unhandled exception")
+    return jsonify({"error": t("errors.internal_error")}), 500
 
 
-@app.errorhandler(404)
+def handle_400(e):
+    return jsonify({"error": t("errors.bad_request")}), 400
+
+
 def handle_404(e):
-    return jsonify({"error": "Not found"}), 404
+    return jsonify({"error": t("errors.not_found")}), 404
 
 
-@app.errorhandler(405)
 def handle_405(e):
-    return jsonify({"error": "Method not allowed"}), 405
+    return jsonify({"error": t("errors.method_not_allowed")}), 405
 
 
 # ---------------------------------------------------------------------------
-# Page route
+# Graceful shutdown (NFR-ME8)
 # ---------------------------------------------------------------------------
 
-@app.route("/")
-def index():
-    return render_template("index.html")
+_shutdown_lock = threading.Lock()
+_shutdown_done = False
 
 
-# ---------------------------------------------------------------------------
-# Bot Control
-# ---------------------------------------------------------------------------
+def graceful_shutdown() -> None:
+    """Tear down all resources: bot thread, scheduler, login browser, database.
 
-@app.route("/api/bot/start", methods=["POST"])
-def bot_start():
-    # Prevent duplicate threads
-    if _bot_thread and _bot_thread.is_alive():
-        return jsonify({"error": "Bot is already running"}), 409
-
-    config = load_config()
-    if config is None:
-        return jsonify({"error": "Configuration not found. Complete setup first."}), 400
-
-    _scheduler_start_bot()
-    return jsonify({"status": "running"})
-
-
-@app.route("/api/bot/pause", methods=["POST"])
-def bot_pause():
-    bot_state.pause()
-    return jsonify({"status": "paused"})
-
-
-@app.route("/api/bot/stop", methods=["POST"])
-def bot_stop():
-    bot_state.stop()
-    # Wait briefly for thread to exit
-    if _bot_thread and _bot_thread.is_alive():
-        _bot_thread.join(timeout=10)
-    return jsonify({"status": "stopped"})
-
-
-@app.route("/api/bot/status", methods=["GET"])
-def bot_status():
-    status_dict = bot_state.get_status_dict()
-    status_dict["ai_available"] = check_ai_available()
-    status_dict["schedule_enabled"] = bot_scheduler.running
-    return jsonify(status_dict)
-
-
-# ---------------------------------------------------------------------------
-# Schedule
-# ---------------------------------------------------------------------------
-
-@app.route("/api/bot/schedule", methods=["GET"])
-def get_schedule():
-    config = load_config()
-    if config is None:
-        return jsonify(ScheduleConfig().model_dump())
-    return jsonify(config.bot.schedule.model_dump())
-
-
-@app.route("/api/bot/schedule", methods=["PUT"])
-def update_schedule():
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "Request body is required"}), 400
-
-    # Validate days_of_week values
-    valid_days = {"mon", "tue", "wed", "thu", "fri", "sat", "sun"}
-    if "days_of_week" in data:
-        invalid = [d for d in data["days_of_week"] if d.lower() not in valid_days]
-        if invalid:
-            return jsonify({"error": f"Invalid days: {invalid}"}), 400
-
-    # Validate time format
-    for field in ("start_time", "end_time"):
-        if field in data:
-            try:
-                h, m = map(int, data[field].split(":"))
-                if not (0 <= h <= 23 and 0 <= m <= 59):
-                    raise ValueError
-            except (ValueError, AttributeError):
-                return jsonify({"error": f"Invalid {field} format. Use HH:MM (24-hour)"}), 400
-
-    config = load_config()
-    if config is None:
-        return jsonify({"error": "Configuration not found. Complete setup first."}), 400
-
-    # Merge with existing schedule
-    current = config.bot.schedule.model_dump()
-    current.update(data)
-    config.bot.schedule = ScheduleConfig(**current)
-    save_config(config)
-
-    # Start or stop scheduler based on enabled flag
-    if config.bot.schedule.enabled:
-        if not bot_scheduler.running:
-            bot_scheduler.start()
-    else:
-        if bot_scheduler.running:
-            bot_scheduler.stop()
-
-    return jsonify(config.bot.schedule.model_dump())
-
-
-# ---------------------------------------------------------------------------
-# Review Gate
-# ---------------------------------------------------------------------------
-
-@app.route("/api/bot/review/approve", methods=["POST"])
-def review_approve():
-    if not bot_state.awaiting_review:
-        return jsonify({"error": "No application awaiting review"}), 409
-    bot_state.set_review_decision("approve")
-    return jsonify({"status": "approved"})
-
-
-@app.route("/api/bot/review/skip", methods=["POST"])
-def review_skip():
-    if not bot_state.awaiting_review:
-        return jsonify({"error": "No application awaiting review"}), 409
-    bot_state.set_review_decision("skip")
-    return jsonify({"status": "skipped"})
-
-
-@app.route("/api/bot/review/edit", methods=["POST"])
-def review_edit():
-    if not bot_state.awaiting_review:
-        return jsonify({"error": "No application awaiting review"}), 409
-    data = request.get_json()
-    if not data or "cover_letter" not in data:
-        return jsonify({"error": "cover_letter is required"}), 400
-    bot_state.set_review_decision("edit", edits=data["cover_letter"])
-    return jsonify({"status": "edited"})
-
-
-@app.route("/api/bot/review/manual", methods=["POST"])
-def review_manual():
-    """Mark current review as 'manual' — user will apply themselves."""
-    if not bot_state.awaiting_review:
-        return jsonify({"error": "No application awaiting review"}), 409
-    bot_state.set_review_decision("manual")
-    return jsonify({"status": "manual"})
-
-
-# ---------------------------------------------------------------------------
-# Applications
-# ---------------------------------------------------------------------------
-
-@app.route("/api/applications", methods=["GET"])
-def get_applications():
-    status = request.args.get("status")
-    platform_filter = request.args.get("platform")
-    search = request.args.get("search")
-    limit = request.args.get("limit", 50, type=int)
-    offset = request.args.get("offset", 0, type=int)
-    applications = db.get_all_applications(
-        status=status,
-        platform=platform_filter,
-        search=search,
-        limit=limit,
-        offset=offset,
-    )
-    return jsonify([a.model_dump() for a in applications])
-
-
-@app.route("/api/applications/<int:app_id>", methods=["GET"])
-def get_application_detail(app_id: int):
-    application = db.get_application(app_id)
-    if not application:
-        return jsonify({"error": "Application not found"}), 404
-    return jsonify(application.model_dump())
-
-
-@app.route("/api/applications/<int:app_id>/events", methods=["GET"])
-def get_application_events(app_id: int):
-    application = db.get_application(app_id)
-    if not application:
-        return jsonify({"error": "Application not found"}), 404
-    events = db.get_feed_events_for_job(application.job_title, application.company)
-    return jsonify([e.model_dump() for e in events])
-
-
-@app.route("/api/applications/export", methods=["GET"])
-def export_applications():
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".csv")
-    tmp.close()
-    csv_path = Path(tmp.name)
-    db.export_csv(csv_path)
-    return send_file(
-        csv_path,
-        mimetype="text/csv",
-        as_attachment=True,
-        download_name=f"applications_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-    )
-
-
-@app.route("/api/applications/<int:app_id>", methods=["PATCH"])
-def update_application(app_id: int):
-    data = request.get_json()
-    if not data:
-        return jsonify({"error": "Request body is required"}), 400
-    application = db.get_application(app_id)
-    if not application:
-        return jsonify({"error": "Application not found"}), 404
-    status = data.get("status", application.status)
-    notes = data.get("notes", application.notes)
-    db.update_status(app_id, status=status, notes=notes)
-    return jsonify({"success": True})
-
-
-@app.route("/api/applications/<int:app_id>/cover_letter", methods=["GET"])
-def get_cover_letter(app_id: int):
-    application = db.get_application(app_id)
-    if not application:
-        return jsonify({"error": "Application not found"}), 404
-    return jsonify({
-        "cover_letter_text": application.cover_letter_text,
-        "file_path": application.cover_letter_path,
-    })
-
-
-@app.route("/api/applications/<int:app_id>/resume", methods=["GET"])
-def get_resume(app_id: int):
-    application = db.get_application(app_id)
-    if not application:
-        return jsonify({"error": "Application not found"}), 404
-    resume_path = application.resume_path
-    if not resume_path or not Path(resume_path).exists():
-        return jsonify({"error": "Resume not found"}), 404
-    return send_file(resume_path, mimetype="application/pdf")
-
-
-@app.route("/api/applications/<int:app_id>/description", methods=["GET"])
-def get_job_description(app_id: int):
-    application = db.get_application(app_id)
-    if not application:
-        return jsonify({"error": "Application not found"}), 404
-    desc_path = application.description_path
-    if not desc_path or not Path(desc_path).exists():
-        return jsonify({"error": "Job description not found"}), 404
-    return send_file(desc_path, mimetype="text/html")
-
-
-# ---------------------------------------------------------------------------
-# Profile / Experience Files
-# ---------------------------------------------------------------------------
-
-@app.route("/api/profile/experiences", methods=["GET"])
-def list_experiences():
-    experiences_dir = get_data_dir() / "profile" / "experiences"
-    experiences_dir.mkdir(parents=True, exist_ok=True)
-    files: list[dict] = []
-    for file_path in sorted(experiences_dir.glob("*.txt")):
-        stat = file_path.stat()
-        files.append({
-            "name": file_path.name,
-            "content": file_path.read_text(encoding="utf-8"),
-            "size": stat.st_size,
-            "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-        })
-    return jsonify({"files": files})
-
-
-@app.route("/api/profile/experiences", methods=["POST"])
-def create_experience():
-    data = request.get_json()
-    if not data or "filename" not in data or "content" not in data:
-        return jsonify({"error": "filename and content are required"}), 400
-    filename: str = data["filename"]
-    content: str = data["content"]
-    error = validate_filename(filename)
-    if error:
-        return jsonify({"error": error}), 400
-    experiences_dir = get_data_dir() / "profile" / "experiences"
-    experiences_dir.mkdir(parents=True, exist_ok=True)
-    (experiences_dir / filename).write_text(content, encoding="utf-8")
-    return jsonify({"success": True})
-
-
-@app.route("/api/profile/experiences/<filename>", methods=["PUT"])
-def update_experience(filename: str):
-    error = validate_filename(filename)
-    if error:
-        return jsonify({"error": error}), 400
-    data = request.get_json()
-    if not data or "content" not in data:
-        return jsonify({"error": "content is required"}), 400
-    content: str = data["content"]
-    experiences_dir = get_data_dir() / "profile" / "experiences"
-    file_path = experiences_dir / filename
-    if not file_path.exists():
-        return jsonify({"error": "File not found"}), 404
-    file_path.write_text(content, encoding="utf-8")
-    return jsonify({"success": True})
-
-
-@app.route("/api/profile/experiences/<filename>", methods=["DELETE"])
-def delete_experience(filename: str):
-    error = validate_filename(filename)
-    if error:
-        return jsonify({"error": error}), 400
-    experiences_dir = get_data_dir() / "profile" / "experiences"
-    file_path = experiences_dir / filename
-    if not file_path.exists():
-        return jsonify({"error": "File not found"}), 404
-    file_path.unlink()
-    return jsonify({"success": True})
-
-
-@app.route("/api/profile/status", methods=["GET"])
-def profile_status():
-    experiences_dir = get_data_dir() / "profile" / "experiences"
-    experiences_dir.mkdir(parents=True, exist_ok=True)
-    txt_files = list(experiences_dir.glob("*.txt"))
-    total_words = 0
-    for file_path in txt_files:
-        total_words += len(file_path.read_text(encoding="utf-8").split())
-    return jsonify({
-        "file_count": len(txt_files),
-        "total_words": total_words,
-        "ai_available": check_ai_available(),
-    })
-
-
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
-
-@app.route("/api/config", methods=["GET"])
-def get_config():
-    config = load_config()
-    if config is None:
-        return jsonify({})
-    return jsonify(config.model_dump())
-
-
-@app.route("/api/config", methods=["PUT"])
-def update_config():
-    data = request.get_json()
-    existing = load_config()
-    if existing:
-        merged = existing.model_dump()
-        for key, value in data.items():
-            if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
-                merged[key].update(value)
-            else:
-                merged[key] = value
-        config = AppConfig(**merged)
-    else:
-        config = AppConfig(**data)
-    save_config(config)
-    return jsonify({"success": True})
-
-
-# ---------------------------------------------------------------------------
-# Analytics
-# ---------------------------------------------------------------------------
-
-@app.route("/api/analytics/summary", methods=["GET"])
-def analytics_summary():
-    return jsonify(db.get_analytics_summary())
-
-
-@app.route("/api/analytics/daily", methods=["GET"])
-def analytics_daily():
-    days = request.args.get("days", 30, type=int)
-    return jsonify(db.get_daily_analytics(days))
-
-
-# ---------------------------------------------------------------------------
-# Feed Events
-# ---------------------------------------------------------------------------
-
-@app.route("/api/feed", methods=["GET"])
-def get_feed_events():
-    limit = request.args.get("limit", 50, type=int)
-    events = db.get_feed_events(limit=limit)
-    return jsonify([e.model_dump() for e in events])
-
-
-# ---------------------------------------------------------------------------
-# Setup
-# ---------------------------------------------------------------------------
-
-@app.route("/api/setup/status", methods=["GET"])
-def setup_status():
-    return jsonify({
-        "is_first_run": is_first_run(),
-        "ai_available": check_ai_available(),
-    })
-
-
-# ---------------------------------------------------------------------------
-# AI Provider
-# ---------------------------------------------------------------------------
-
-@app.route("/api/ai/validate", methods=["POST"])
-def validate_ai_key():
-    data = request.get_json(force=True) or {}
-    provider = data.get("provider", "")
-    api_key = data.get("api_key", "")
-    model = data.get("model", "")
-    if not provider or not api_key:
-        return jsonify({"error": "provider and api_key are required"}), 400
-    if provider not in ("anthropic", "openai", "google", "deepseek"):
-        return jsonify({"error": f"Unsupported provider: {provider}"}), 400
-    valid = _validate_api_key(provider, api_key, model or None)
-    return jsonify({"valid": valid})
-
-
-# ---------------------------------------------------------------------------
-# Platform Login
-# ---------------------------------------------------------------------------
-
-
-def _find_system_chrome() -> str | None:
-    """Find system-installed Chrome/Chromium for faster browser sessions."""
-    import platform
-    candidates = []
-    if platform.system() == "Windows":
-        for base in [
-            os.environ.get("PROGRAMFILES", r"C:\Program Files"),
-            os.environ.get("PROGRAMFILES(X86)", r"C:\Program Files (x86)"),
-            os.path.expandvars(r"%LOCALAPPDATA%"),
-        ]:
-            candidates.append(os.path.join(base, "Google", "Chrome", "Application", "chrome.exe"))
-    elif platform.system() == "Darwin":
-        candidates.append("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
-    else:
-        candidates.extend(["/usr/bin/google-chrome", "/usr/bin/chromium-browser", "/usr/bin/chromium"])
-
-    for path in candidates:
-        if os.path.isfile(path):
-            return path
-    return None
-
-
-_login_proc = None  # subprocess.Popen for login Chrome window
-_login_lock = threading.Lock()
-
-
-@app.route("/api/login/open", methods=["POST"])
-def login_open():
-    """Open system Chrome with a dedicated profile for platform login.
-
-    Launches Chrome directly via subprocess — no Playwright overhead.
-    The browser_profile directory preserves cookies so the bot can reuse
-    the login session later.
+    Safe to call multiple times (idempotent via _shutdown_done flag).
     """
-    global _login_proc
-    data = request.get_json()
-    if not data or "url" not in data:
-        return jsonify({"error": "url is required"}), 400
+    global _shutdown_done
+    with _shutdown_lock:
+        if _shutdown_done:
+            return
+        _shutdown_done = True
 
-    url = data["url"]
-    allowed_domains = ["linkedin.com", "indeed.com"]
-    if not any(domain in url for domain in allowed_domains):
-        return jsonify({"error": "Only LinkedIn and Indeed URLs are supported"}), 400
+    logger.info("Graceful shutdown initiated")
 
-    chrome_path = _find_system_chrome()
-    if not chrome_path:
-        return jsonify({
-            "error": "Google Chrome not found. Please install Chrome.",
-        }), 500
-
-    profile_dir = str(get_data_dir() / "browser_profile")
-
-    with _login_lock:
-        # Kill existing login browser if still running
-        if _login_proc is not None:
-            try:
-                _login_proc.terminate()
-            except Exception:
-                pass
-            _login_proc = None
-
+    # 1. Stop bot state (signals bot loop to exit)
     try:
-        proc = subprocess.Popen(
-            [
-                chrome_path,
-                f"--user-data-dir={profile_dir}",
-                "--no-first-run",
-                "--no-default-browser-check",
-                "--disable-default-apps",
-                "--new-window",
-                url,
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        with _login_lock:
-            _login_proc = proc
-        logging.getLogger(__name__).info(
-            "Login browser opened (Chrome PID %d): %s", proc.pid, url,
-        )
+        app_state.bot_state.stop()
     except Exception as e:
-        logging.getLogger(__name__).error("Failed to open login browser: %s", e)
-        return jsonify({"error": f"Failed to open Chrome: {e}"}), 500
+        logger.debug("Error stopping bot state: %s", e)
 
-    return jsonify({"status": "opening"})
+    # 2. Join bot thread (wait up to 10s)
+    with app_state.bot_lock:
+        thread = app_state.bot_thread
+    if thread and thread.is_alive():
+        logger.info("Waiting for bot thread to finish...")
+        thread.join(timeout=10)
+        if thread.is_alive():
+            logger.warning("Bot thread did not stop within 10s")
 
-
-@app.route("/api/login/close", methods=["POST"])
-def login_close():
-    """Close the login browser."""
-    global _login_proc
-    with _login_lock:
-        if _login_proc is None:
-            return jsonify({"status": "already_closed"})
-        proc = _login_proc
-        _login_proc = None
-
-    try:
-        proc.terminate()
-    except Exception:
-        pass
-    return jsonify({"status": "closed"})
-
-
-@app.route("/api/login/status", methods=["GET"])
-def login_status():
-    """Check if a login browser is currently open."""
-    global _login_proc
-    with _login_lock:
-        if _login_proc is None:
-            return jsonify({"open": False})
-        if _login_proc.poll() is not None:
-            # Process exited (user closed Chrome)
-            _login_proc = None
-            return jsonify({"open": False})
-        return jsonify({"open": True})
-
-
-@app.route("/api/login/sessions", methods=["GET"])
-def login_sessions():
-    """Check which platforms have active login sessions.
-
-    Reads the Chrome Cookies SQLite DB in browser_profile to detect
-    session cookies for LinkedIn and Indeed.
-    """
-    import shutil
-    import sqlite3
-
-    profile_cookies = get_data_dir() / "browser_profile" / "Default" / "Network" / "Cookies"
-    result = {"linkedin": False, "indeed": False}
-
-    if not profile_cookies.exists():
-        return jsonify(result)
-
-    # Chrome locks the Cookies DB — copy to a temp file to read safely
-    tmp_cookies = get_data_dir() / "browser_profile" / "_cookies_check.db"
-    try:
-        shutil.copy2(str(profile_cookies), str(tmp_cookies))
-        conn = sqlite3.connect(str(tmp_cookies))
-        cursor = conn.cursor()
-
-        # LinkedIn: li_at is the main session cookie
-        cursor.execute(
-            "SELECT COUNT(*) FROM cookies WHERE host_key LIKE '%linkedin.com' "
-            "AND name = 'li_at'"
-        )
-        result["linkedin"] = cursor.fetchone()[0] > 0
-
-        # Indeed: INDEED_CSRF_TOKEN or indeed_rcc indicate an active session
-        cursor.execute(
-            "SELECT COUNT(*) FROM cookies WHERE host_key LIKE '%indeed.com' "
-            "AND name IN ('INDEED_CSRF_TOKEN', 'indeed_rcc')"
-        )
-        result["indeed"] = cursor.fetchone()[0] > 0
-
-        conn.close()
-    except Exception as e:
-        logging.getLogger(__name__).debug("Could not read cookies DB: %s", e)
-    finally:
+    # 3. Stop scheduler
+    scheduler = app_state.bot_scheduler
+    if scheduler is not None:
         try:
-            tmp_cookies.unlink(missing_ok=True)
-        except Exception:
-            pass
+            scheduler.stop()
+        except Exception as e:
+            logger.debug("Error stopping scheduler: %s", e)
 
-    return jsonify(result)
+    # 4. Kill login browser process
+    with app_state.login_lock:
+        proc = app_state.login_proc
+        app_state.login_proc = None
+    if proc is not None:
+        try:
+            proc.terminate()
+            proc.wait(timeout=5)
+        except Exception as e:
+            logger.debug("Error terminating login browser: %s", e)
 
+    # 5. Close database
+    db = app_state.db
+    if db is not None:
+        try:
+            db.close()
+        except Exception as e:
+            logger.debug("Error closing database: %s", e)
 
-# ---------------------------------------------------------------------------
-# Lifecycle (used by Electron shell)
-# ---------------------------------------------------------------------------
-
-@app.route("/api/health", methods=["GET"])
-def health_check():
-    return jsonify({"status": "ok"})
-
-
-@app.route("/api/shutdown", methods=["POST"])
-def shutdown():
-    if request.remote_addr not in ("127.0.0.1", "::1"):
-        return jsonify({"error": "Forbidden"}), 403
-    pid = os.getpid()
-
-    def _shutdown():
-        import time
-        time.sleep(0.5)
-        os.kill(pid, signal.SIGTERM)
-
-    import threading
-    threading.Thread(target=_shutdown, daemon=True).start()
-    return jsonify({"status": "shutting_down"})
+    logger.info("Graceful shutdown complete")
 
 
 # ---------------------------------------------------------------------------
-# SocketIO
+# Security headers (NFR-SEC1)
 # ---------------------------------------------------------------------------
 
-@socketio.on("connect")
-def handle_connect():
-    status_dict = bot_state.get_status_dict()
-    status_dict["schedule_enabled"] = bot_scheduler.running
-    emit("bot_status", status_dict)
+def _add_security_headers(response):
+    """Add security headers to all responses."""
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    # Prevent caching of API responses containing sensitive data
+    if request.path.startswith("/api/"):
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+    return response
 
 
 # ---------------------------------------------------------------------------
-# Auto-start scheduler if schedule is enabled in config
+# Application factory
 # ---------------------------------------------------------------------------
 
-def _init_scheduler():
-    """Start scheduler on app startup if schedule is enabled."""
-    schedule = _get_schedule()
-    if schedule and schedule.enabled:
-        bot_scheduler.start()
+def create_app() -> tuple[Flask, SocketIO]:
+    """Application factory — creates Flask app, SocketIO, registers all blueprints."""
+    flask_app = Flask(__name__)
+    flask_app.config["SECRET_KEY"] = _get_or_create_secret_key()
 
-_init_scheduler()
+    sio = SocketIO(
+        flask_app,
+        cors_allowed_origins=["http://localhost:*", "http://127.0.0.1:*"],
+        async_mode="gevent",
+    )
+
+    # Initialize shared state
+    app_state.socketio = sio
+    app_state.db = Database(get_data_dir() / "autoapply.db")
+    app_state.api_token = _get_or_create_api_token()
+
+    # Register blueprints
+    from routes.analytics import analytics_bp
+    from routes.applications import applications_bp
+    from routes.bot import bot_bp, init_scheduler
+    from routes.config import config_bp
+    from routes.lifecycle import lifecycle_bp, register_socketio_handlers
+    from routes.login import login_bp
+    from routes.profile import profile_bp
+
+    flask_app.register_blueprint(applications_bp)
+    flask_app.register_blueprint(bot_bp)
+    flask_app.register_blueprint(config_bp)
+    flask_app.register_blueprint(profile_bp)
+    flask_app.register_blueprint(login_bp)
+    flask_app.register_blueprint(analytics_bp)
+    flask_app.register_blueprint(lifecycle_bp)
+
+    # Register SocketIO handlers
+    register_socketio_handlers(sio)
+
+    # Initialize scheduler
+    init_scheduler()
+
+    # Security: max request size (16 MB) to prevent DoS via large uploads
+    flask_app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+
+    # Register auth middleware, rate limiter, security headers, and error handlers
+    flask_app.before_request(_check_auth)
+    flask_app.before_request(_check_rate_limit)
+    flask_app.after_request(_add_security_headers)
+    flask_app.register_error_handler(Exception, handle_exception)
+    flask_app.register_error_handler(400, handle_400)
+    flask_app.register_error_handler(404, handle_404)
+    flask_app.register_error_handler(405, handle_405)
+    flask_app.register_error_handler(413, lambda e: (jsonify({"error": t("errors.request_too_large")}), 413))
+    flask_app.register_error_handler(429, lambda e: (jsonify({"error": t("errors.too_many_requests")}), 429))
+
+    # Register atexit handler for graceful shutdown (NFR-ME8)
+    atexit.register(graceful_shutdown)
+
+    return flask_app, sio
+
+
+# Module-level app and socketio for backward compatibility with run.py and tests
+app, socketio = create_app()
+
+# Re-exports for backward compatibility with tests that import from app module.
+# These reference the shared state in app_state so monkeypatching works correctly.
+bot_state = app_state.bot_state
+bot_scheduler = app_state.bot_scheduler
+db = app_state.db
+_bot_lock = app_state.bot_lock
+_api_token = app_state.api_token
+_login_proc = app_state.login_proc
+_login_lock = app_state.login_lock
+
+# Re-export functions that tests reference via app module
+from routes.applications import export_applications  # noqa: E402, F401
+from routes.bot import (  # noqa: E402, F401
+    _is_bot_running,
+    _scheduler_start_bot,
+    _scheduler_stop_bot,
+)
+from routes.profile import validate_filename  # noqa: E402, F401

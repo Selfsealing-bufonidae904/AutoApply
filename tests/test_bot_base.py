@@ -1,16 +1,18 @@
-"""Unit tests for bot base classes — search and apply."""
+"""Unit tests for bot base classes — search and apply.
+
+Requirement traceability:
+    FR-044  Search abstraction (RawJob, BaseSearcher)
+    FR-046  Applier abstraction (ApplyResult, BaseApplier)
+"""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from bot.search.base import RawJob, BaseSearcher
 from bot.apply.base import ApplyResult, BaseApplier
-
+from bot.search.base import BaseSearcher, RawJob
 
 # ===================================================================
 # RawJob

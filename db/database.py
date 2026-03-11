@@ -1,3 +1,9 @@
+"""SQLite database layer for application storage and analytics.
+
+Implements: FR-004 (SQLite database), FR-005 (application storage),
+            FR-006 (analytics queries).
+"""
+
 from __future__ import annotations
 
 import csv
@@ -49,9 +55,15 @@ class Database:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self.init_schema()
 
+    def close(self) -> None:
+        """Close database resources. No-op for per-operation connections."""
+        pass
+
     def _connect(self) -> sqlite3.Connection:
         conn = sqlite3.connect(str(self.db_path), check_same_thread=False)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA busy_timeout=5000")
         return conn
 
     def init_schema(self) -> None:

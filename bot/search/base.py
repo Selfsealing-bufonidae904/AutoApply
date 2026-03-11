@@ -1,4 +1,7 @@
-"""Base classes for job search engines."""
+"""Base classes for job search engines.
+
+Implements: FR-044 (search abstraction).
+"""
 
 from __future__ import annotations
 

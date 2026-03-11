@@ -15,13 +15,10 @@ Requirement traceability:
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
 from db.database import Database
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -80,6 +77,8 @@ def app_client(tmp_path, monkeypatch):
     # Redirect data dir to tmp_path everywhere it is referenced
     monkeypatch.setattr("config.settings.get_data_dir", lambda: tmp_path)
     monkeypatch.setattr("app.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("routes.profile.get_data_dir", lambda: tmp_path)
+    monkeypatch.setattr("routes.applications.get_data_dir", lambda: tmp_path)
 
     # Create required directory structure
     (tmp_path / "profile" / "experiences").mkdir(parents=True)
@@ -109,6 +108,7 @@ def app_client(tmp_path, monkeypatch):
     # Re-initialise database in the tmp location
     test_db = Database(tmp_path / "test.db")
     monkeypatch.setattr("app.db", test_db)
+    monkeypatch.setattr("app_state.db", test_db)
 
     from app import app
 
@@ -711,16 +711,14 @@ class TestAIDetection:
     def test_ai_available_true(self, app_client, monkeypatch):
         """AC-031-1: AI configured -> ai_available is True."""
         client, _db, _tmp = app_client
-        monkeypatch.setattr("app._check_ai_available", lambda cfg: True)
-        monkeypatch.setattr("app.load_config", lambda: SimpleNamespace(llm=SimpleNamespace(provider="anthropic", api_key="sk-test")))
+        monkeypatch.setattr("routes.bot.check_ai_available", lambda: True)
         resp = client.get("/api/bot/status")
         assert resp.get_json()["ai_available"] is True
 
     def test_ai_available_false(self, app_client, monkeypatch):
         """AC-031-2: AI not configured -> ai_available is False."""
         client, _db, _tmp = app_client
-        monkeypatch.setattr("app._check_ai_available", lambda cfg: False)
-        monkeypatch.setattr("app.load_config", lambda: SimpleNamespace(llm=SimpleNamespace(provider="", api_key="")))
+        monkeypatch.setattr("routes.bot.check_ai_available", lambda: False)
         resp = client.get("/api/bot/status")
         assert resp.get_json()["ai_available"] is False
 
@@ -784,6 +782,7 @@ class TestShutdown:
         client, _db, _tmp = app_client
         # Prevent actual shutdown by monkeypatching os.kill
         monkeypatch.setattr("app.os.kill", lambda pid, sig: None)
+        monkeypatch.setattr("routes.lifecycle.os.kill", lambda pid, sig: None)
         resp = client.post("/api/shutdown")
         assert resp.status_code == 200
         data = resp.get_json()

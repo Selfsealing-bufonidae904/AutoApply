@@ -1,4 +1,7 @@
-"""LinkedIn job search engine using Playwright."""
+"""LinkedIn job search engine using Playwright.
+
+Implements: FR-044 (LinkedIn search).
+"""
 
 from __future__ import annotations
 
@@ -120,7 +123,8 @@ class LinkedInSearcher(BaseSearcher):
         try:
             card.click()
             time.sleep(1)
-        except Exception:
+        except Exception as e:
+            logger.debug("LinkedIn: failed to click job card: %s", e)
             return None
 
         # Extract from the detail panel

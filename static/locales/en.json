@@ -1,0 +1,288 @@
+{
+  "app": {
+    "title": "AutoApply — Smart Job Application Dashboard",
+    "skip_to_content": "Skip to main content"
+  },
+
+  "nav": {
+    "dashboard": "Dashboard",
+    "applications": "Applications",
+    "profile": "Experience Files",
+    "settings": "Settings",
+    "analytics": "Analytics"
+  },
+
+  "wizard": {
+    "welcome_title": "Welcome to AutoApply",
+    "welcome_subtitle": "AutoApply automates your job search by scanning platforms, matching opportunities to your profile, generating tailored resumes and cover letters, and applying on your behalf. Let's get you set up in a few quick steps.",
+    "ai_checking": "Checking AI provider...",
+    "ai_configured": "AI provider configured",
+    "ai_not_configured": "No AI provider — configure in Settings after setup",
+    "skip_to_login": "Skip to Platform Login",
+    "get_started": "Get Started",
+    "experience_title": "Experience Folder",
+    "experience_subtitle": "AutoApply reads your professional experiences from text files. Place your work history, projects, certifications, and skills into separate files in the experiences folder. The AI uses these to craft perfectly tailored resumes.",
+    "open_folder": "Open Folder",
+    "files_detected": "Files detected:",
+    "refresh": "Refresh",
+    "profile_title": "Your Profile",
+    "profile_subtitle": "Basic information used across your applications.",
+    "preferences_title": "Job Preferences",
+    "preferences_subtitle": "Define your ideal job search criteria.",
+    "resume_title": "Fallback Resume",
+    "resume_subtitle": "Upload a fallback resume for platforms that require a file. If an AI provider is configured, AutoApply generates tailored resumes automatically — this is only used as a backup.",
+    "login_title": "Platform Login",
+    "login_subtitle": "Log in to each platform to enable automated applications. This opens a real browser — log in normally, then close it.",
+    "summary_title": "Summary",
+    "back": "Back",
+    "next": "Next",
+    "finish": "Finish Setup",
+    "summary_name": "Name:",
+    "summary_email": "Email:",
+    "summary_location": "Location:",
+    "summary_titles": "Job Titles:",
+    "summary_locations": "Locations:",
+    "summary_remote": "Remote Only:",
+    "summary_experience": "Experience Levels:",
+    "summary_resume": "Fallback Resume:",
+    "uploaded": "Uploaded",
+    "skipped": "Skipped",
+    "not_set": "(not set)",
+    "none": "(none)",
+    "yes": "Yes",
+    "no": "No"
+  },
+
+  "form": {
+    "first_name": "First Name",
+    "last_name": "Last Name",
+    "email": "Email",
+    "phone": "Phone",
+    "address_line1": "Address Line 1",
+    "address_line2": "Address Line 2",
+    "city": "City",
+    "state": "State",
+    "zip_code": "ZIP Code",
+    "country": "Country",
+    "bio": "Bio / Summary",
+    "linkedin_url": "LinkedIn URL",
+    "portfolio_url": "Portfolio URL",
+    "work_authorization": "Work Authorization",
+    "visa_sponsorship": "Visa Sponsorship Needed?",
+    "years_experience": "Years of Experience",
+    "desired_salary": "Desired Salary",
+    "willing_relocate": "Willing to Relocate?",
+    "start_date": "Earliest Start Date",
+    "gender": "Gender",
+    "ethnicity": "Ethnicity",
+    "veteran_status": "Veteran Status",
+    "disability_status": "Disability Status",
+    "job_titles": "Job Titles",
+    "locations": "Preferred Locations",
+    "remote_only": "Remote Only",
+    "salary_min": "Minimum Salary",
+    "keywords_include": "Keywords to Include",
+    "keywords_exclude": "Keywords to Exclude",
+    "experience_levels": "Experience Levels",
+    "required": "required"
+  },
+
+  "placeholder": {
+    "first_name": "Jane",
+    "last_name": "Doe",
+    "email": "jane@example.com",
+    "phone_code": "+1",
+    "phone": "555-0123",
+    "address1": "123 Main St",
+    "address2": "Apt 4B",
+    "city": "San Francisco",
+    "state": "CA",
+    "zip": "94105",
+    "country": "United States",
+    "bio": "Brief professional summary...",
+    "linkedin": "https://linkedin.com/in/...",
+    "portfolio": "https://...",
+    "years_experience": "e.g. 5",
+    "salary": "e.g. 150000",
+    "start_date": "e.g. Immediately, 2 weeks",
+    "tag_input": "Type and press Enter...",
+    "search": "Search jobs...",
+    "notes": "Add notes...",
+    "upload_resume": "Upload resume file. Drag & drop or click to browse."
+  },
+
+  "button": {
+    "start": "Start",
+    "pause": "Pause",
+    "stop": "Stop",
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "confirm": "Confirm",
+    "edit": "Edit",
+    "close": "Close",
+    "export_csv": "Export CSV",
+    "new_file": "+ New File",
+    "save_settings": "Save Settings",
+    "validate": "Validate",
+    "approve": "Approve",
+    "skip": "Skip",
+    "manual_apply": "Apply Manually",
+    "save_notes": "Save Notes",
+    "view": "View",
+    "download": "Download",
+    "clear_feed": "Clear",
+    "close_browser": "Close Browser"
+  },
+
+  "bot": {
+    "running": "Running",
+    "paused": "Paused",
+    "stopped": "Stopped",
+    "uptime_default": "--:--"
+  },
+
+  "ai": {
+    "connected": "AI Connected",
+    "not_configured": "AI (not configured)",
+    "warning_title": "No AI Provider Configured",
+    "warning_body": "The bot will use basic templates instead of AI-generated resumes. Configure in"
+  },
+
+  "applications": {
+    "no_results": "No applications found.",
+    "load_error": "Could not load applications.",
+    "loading": "Loading...",
+    "detail_load_error": "Could not load application details.",
+    "no_cover_letter": "(No cover letter)",
+    "no_activity": "No activity events recorded.",
+    "not_specified": "Not specified",
+    "label_platform": "Platform",
+    "label_match_score": "Match Score",
+    "label_applied": "Applied",
+    "label_updated": "Last Updated",
+    "label_salary": "Salary",
+    "label_status": "Status",
+    "label_notes": "Notes",
+    "label_error": "Error",
+    "label_timeline": "Activity Timeline",
+    "view_job_posting": "View Job Posting",
+    "view_description": "View Job Description",
+    "download_resume": "Download Resume",
+    "view_cover_letter": "View Cover Letter",
+    "previous_page": "Previous page",
+    "next_page": "Next page"
+  },
+
+  "profile": {
+    "edit_file": "Edit File",
+    "new_file": "New Experience File",
+    "enter_filename": "Please enter a filename.",
+    "save_error": "Error saving file.",
+    "no_files": "No experience files yet. Click \"+ New File\" to create one.",
+    "load_error": "Could not load files.",
+    "confirm_delete_title": "Confirm Delete",
+    "words": "words"
+  },
+
+  "settings": {
+    "select_provider": "Select a provider first",
+    "enter_api_key": "Enter an API key",
+    "validating": "Validating...",
+    "key_valid": "API key is valid",
+    "key_invalid": "Invalid API key or provider error",
+    "validation_failed": "Validation failed — check your connection",
+    "save_error": "Error saving settings.",
+    "saved": "Settings saved!"
+  },
+
+  "login": {
+    "open_error": "Failed to open browser",
+    "connection_error": "Could not connect to server.",
+    "connected": "Connected",
+    "not_connected": "Not connected"
+  },
+
+  "review": {
+    "unknown": "Unknown",
+    "at": "at"
+  },
+
+  "feed": {
+    "empty": "No activity yet. Start the bot to begin."
+  },
+
+  "analytics": {
+    "applications_label": "Applications"
+  },
+
+  "status": {
+    "applied": "Applied",
+    "interview": "Interview",
+    "rejected": "Rejected",
+    "offer": "Offer",
+    "withdrawn": "Withdrawn",
+    "error": "Error",
+    "manual_required": "Manual Required"
+  },
+
+  "schedule": {
+    "enabled": "Enabled",
+    "days_of_week": "Days of Week",
+    "start_time": "Start Time",
+    "end_time": "End Time",
+    "mon": "Mon",
+    "tue": "Tue",
+    "wed": "Wed",
+    "thu": "Thu",
+    "fri": "Fri",
+    "sat": "Sat",
+    "sun": "Sun"
+  },
+
+  "experience_levels": {
+    "entry": "Entry Level",
+    "mid": "Mid Level",
+    "senior": "Senior",
+    "lead": "Lead / Staff",
+    "director": "Director+",
+    "intern": "Intern"
+  },
+
+  "errors": {
+    "unauthorized": "Unauthorized",
+    "too_many_requests": "Too many requests",
+    "internal_error": "Internal server error",
+    "bad_request": "Bad request",
+    "not_found": "Not found",
+    "method_not_allowed": "Method not allowed",
+    "request_too_large": "Request too large",
+    "forbidden": "Forbidden",
+    "application_not_found": "Application not found",
+    "request_body_required": "Request body is required",
+    "request_body_json": "Request body must be valid JSON",
+    "invalid_status": "Invalid status. Must be one of: {valid_statuses}",
+    "resume_not_found": "Resume not found",
+    "description_not_found": "Job description not found",
+    "bot_already_running": "Bot is already running",
+    "config_not_found": "Configuration not found. Complete setup first.",
+    "no_review_pending": "No application awaiting review",
+    "cover_letter_required": "cover_letter is required",
+    "invalid_days": "Invalid days: {days}",
+    "invalid_time_format": "Invalid {field} format. Use HH:MM (24-hour)",
+    "url_required": "url is required",
+    "invalid_url": "Invalid URL",
+    "unsupported_login_url": "Only LinkedIn and Indeed URLs are supported",
+    "chrome_not_found": "Google Chrome not found. Please install Chrome.",
+    "chrome_failed": "Failed to open Chrome: {error}",
+    "provider_key_required": "provider and api_key are required",
+    "unsupported_provider": "Unsupported provider: {provider}",
+    "invalid_config": "Invalid configuration: {count} validation errors",
+    "filename_content_required": "filename and content are required",
+    "filename_required": "Filename is required",
+    "invalid_filename": "Invalid filename",
+    "invalid_filename_detail": "Invalid filename. Use only letters, numbers, hyphens, underscores, spaces, and .txt extension",
+    "content_required": "content is required",
+    "file_not_found": "File not found"
+  }
+}

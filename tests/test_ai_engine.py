@@ -6,23 +6,24 @@ reading, and document generation orchestration.
 
 from __future__ import annotations
 
-from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from core.ai_engine import (
+    MAX_RETRIES,
+    RETRY_BASE_DELAY,
+    _call_anthropic,
+    _call_google,
+    _call_llm,
+    _call_openai_compatible,
     check_ai_available,
+    generate_documents,
     invoke_llm,
     read_all_experience_files,
-    generate_documents,
-    _call_anthropic,
-    _call_openai_compatible,
-    _call_google,
     validate_api_key,
 )
-
 
 # ===================================================================
 # FR-031 — AI Availability Check
@@ -404,3 +405,133 @@ class TestGenerateDocuments:
         md_path = pdf_path.with_suffix(".md")
         content = md_path.read_text(encoding="utf-8")
         assert "# John Doe" in content
+
+
+# ===================================================================
+# D-6 — LLM Retry with Exponential Backoff
+# ===================================================================
+
+
+class TestLLMRetry:
+    """D-6: LLM API calls retry on transient errors with exponential backoff."""
+
+    def test_retry_on_500_then_succeed(self):
+        """D-6: Retries on 500 error and succeeds on second attempt.  # AC-D6.1"""
+        mock_resp_500 = MagicMock()
+        mock_resp_500.status_code = 500
+        mock_resp_500.text = "Internal Server Error"
+        mock_resp_500.json.return_value = {"error": {"message": "server error"}}
+
+        mock_resp_ok = MagicMock()
+        mock_resp_ok.status_code = 200
+        mock_resp_ok.json.return_value = {
+            "content": [{"text": "success"}],
+        }
+
+        with patch("core.ai_engine.requests.post", side_effect=[mock_resp_500, mock_resp_ok]), \
+             patch("core.ai_engine.time.sleep") as mock_sleep:
+            result = _call_llm("anthropic", "key", "model", "test")
+            assert result == "success"
+            mock_sleep.assert_called_once_with(RETRY_BASE_DELAY)
+
+    def test_retry_on_429_rate_limit(self):
+        """D-6: Retries on 429 rate limit.  # AC-D6.2"""
+        mock_resp_429 = MagicMock()
+        mock_resp_429.status_code = 429
+        mock_resp_429.text = "Rate limited"
+        mock_resp_429.json.return_value = {"error": {"message": "rate limited"}}
+
+        mock_resp_ok = MagicMock()
+        mock_resp_ok.status_code = 200
+        mock_resp_ok.json.return_value = {
+            "content": [{"text": "ok"}],
+        }
+
+        with patch("core.ai_engine.requests.post", side_effect=[mock_resp_429, mock_resp_ok]), \
+             patch("core.ai_engine.time.sleep"):
+            result = _call_llm("anthropic", "key", "model", "test")
+            assert result == "ok"
+
+    def test_no_retry_on_401(self):
+        """D-6: Does not retry on 401 auth error.  # AC-D6.3"""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 401
+        mock_resp.text = "Unauthorized"
+        mock_resp.json.return_value = {"error": {"message": "invalid key"}}
+
+        with patch("core.ai_engine.requests.post", return_value=mock_resp), \
+             patch("core.ai_engine.time.sleep") as mock_sleep:
+            with pytest.raises(RuntimeError, match="401"):
+                _call_llm("anthropic", "key", "model", "test")
+            mock_sleep.assert_not_called()
+
+    def test_no_retry_on_400(self):
+        """D-6: Does not retry on 400 client error.  # AC-D6.4"""
+        mock_resp = MagicMock()
+        mock_resp.status_code = 400
+        mock_resp.text = "Bad Request"
+        mock_resp.json.return_value = {"error": {"message": "bad request"}}
+
+        with patch("core.ai_engine.requests.post", return_value=mock_resp), \
+             patch("core.ai_engine.time.sleep") as mock_sleep:
+            with pytest.raises(RuntimeError, match="400"):
+                _call_llm("openai", "key", "model", "test")
+            mock_sleep.assert_not_called()
+
+    def test_retry_on_connection_error(self):
+        """D-6: Retries on network connection error.  # AC-D6.5"""
+        import requests as req
+
+        mock_resp_ok = MagicMock()
+        mock_resp_ok.status_code = 200
+        mock_resp_ok.json.return_value = {
+            "content": [{"text": "recovered"}],
+        }
+
+        with patch("core.ai_engine.requests.post",
+                    side_effect=[req.ConnectionError("network down"), mock_resp_ok]), \
+             patch("core.ai_engine.time.sleep"):
+            result = _call_llm("anthropic", "key", "model", "test")
+            assert result == "recovered"
+
+    def test_retry_on_timeout(self):
+        """D-6: Retries on request timeout.  # AC-D6.6"""
+        import requests as req
+
+        mock_resp_ok = MagicMock()
+        mock_resp_ok.status_code = 200
+        mock_resp_ok.json.return_value = {
+            "choices": [{"message": {"content": "done"}}],
+        }
+
+        with patch("core.ai_engine.requests.post",
+                    side_effect=[req.Timeout("timed out"), mock_resp_ok]), \
+             patch("core.ai_engine.time.sleep"):
+            result = _call_llm("openai", "key", "model", "test")
+            assert result == "done"
+
+    def test_exponential_backoff_delays(self):
+        """D-6: Sleep delays double on each retry (1s, 2s, 4s).  # AC-D6.7"""
+        mock_resp_500 = MagicMock()
+        mock_resp_500.status_code = 500
+        mock_resp_500.text = "error"
+        mock_resp_500.json.return_value = {"error": {"message": "fail"}}
+
+        with patch("core.ai_engine.requests.post", return_value=mock_resp_500), \
+             patch("core.ai_engine.time.sleep") as mock_sleep:
+            with pytest.raises(RuntimeError, match="after 4 attempts"):
+                _call_llm("anthropic", "key", "model", "test")
+            assert mock_sleep.call_count == MAX_RETRIES
+            delays = [call.args[0] for call in mock_sleep.call_args_list]
+            assert delays == [1.0, 2.0, 4.0]
+
+    def test_unsupported_provider_no_retry(self):
+        """D-6: Unsupported provider raises immediately without retry.  # AC-D6.8"""
+        with patch("core.ai_engine.time.sleep") as mock_sleep:
+            with pytest.raises(RuntimeError, match="Unsupported"):
+                _call_llm("unknown", "key", "model", "test")
+            mock_sleep.assert_not_called()
+
+    def test_max_retries_constant(self):
+        """D-6: MAX_RETRIES is 3.  # AC-D6.9"""
+        assert MAX_RETRIES == 3
