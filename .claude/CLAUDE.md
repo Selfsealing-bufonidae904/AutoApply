@@ -1,4 +1,4 @@
-# Enterprise Engineering Framework — CLAUDE.md v3.0
+# Enterprise Engineering Framework — CLAUDE.md v4.0
 
 > **Supreme Governance Document**
 > Claude MUST read this file completely before taking any action.
@@ -147,6 +147,7 @@ Test         Test         Audit        ation         Package
 5. **Docs before handoff** — No release without complete documentation.
 6. **Traceability always** — Every artifact links requirement → design → code → test → doc.
 7. **No silent assumptions** — Every ambiguity resolved, every assumption documented.
+8. **Production-readiness built in** — Security, i18n, a11y, logging, resilience are requirements of the Build phase (§8), not afterthoughts. Every new endpoint uses `t()`, every new UI element has ARIA, every external call has retry+timeout.
 
 ---
 
@@ -204,51 +205,121 @@ When active, specialist depts inject additional requirements into EVERY relevant
 
 ---
 
-## 8. EMERGENCY OVERRIDE
+## 8. PRODUCTION-READINESS CHECKLIST (Built-In, Not Bolt-On)
+
+Every feature MUST incorporate these concerns **during initial development**, not as
+a separate "hardening" phase afterward. The cost of retrofitting is 3-10x higher than
+building it in from the start.
+
+### 8.1 Security (every backend feature)
+- [ ] Auth/authz on all new endpoints (Bearer token, session, or API key)
+- [ ] Input validation at system boundaries (request body, query params, filenames)
+- [ ] Path traversal protection on any endpoint accepting file paths/names
+- [ ] Rate limiting on public/expensive endpoints
+- [ ] Security headers (`X-Content-Type-Options`, `X-Frame-Options`, etc.)
+- [ ] No secrets in code — use env vars, keyring, or config files with `.gitignore`
+- [ ] CORS locked to expected origins (never `*` in production)
+- [ ] Global error handlers — never leak stack traces to clients
+
+### 8.2 Resilience (every external integration)
+- [ ] Retry with exponential backoff on transient failures (429, 5xx, network errors)
+- [ ] Fail fast on non-retryable errors (400, 401, 403) — no wasted retries
+- [ ] Timeouts on all outbound HTTP calls (never hang forever)
+- [ ] Graceful shutdown — clean up threads, connections, child processes on SIGTERM/SIGINT
+- [ ] Database: WAL mode for SQLite, connection pooling for client/server DBs, busy timeout
+
+### 8.3 Observability (every module)
+- [ ] Structured logging from day one (`logger = logging.getLogger(__name__)`)
+- [ ] JSON log format option for production (`AUTOAPPLY_LOG_FORMAT=json`)
+- [ ] Log at appropriate levels: ERROR for failures, WARNING for degradation, INFO for operations, DEBUG for troubleshooting
+- [ ] No silent `except: pass` — always log caught exceptions at minimum DEBUG level
+
+### 8.4 Internationalization (every user-facing string)
+- [ ] All user-visible strings go through `t()` (backend) or translation lookup (frontend)
+- [ ] String catalog in `static/locales/en.json` — never hardcode English in source
+- [ ] Use `{placeholder}` interpolation for dynamic values in translated strings
+- [ ] New locale = copy `en.json`, translate, done — no code changes needed
+
+### 8.5 Accessibility (every UI component)
+- [ ] Semantic HTML (`<nav>`, `<main>`, `<button>`, not `<div onclick>`)
+- [ ] ARIA attributes: `role`, `aria-label`, `aria-live`, `aria-selected`, `aria-hidden`
+- [ ] Keyboard navigation: Tab order, Enter/Space activation, arrow keys for tab lists
+- [ ] Focus management: visible focus indicators (`:focus-visible`), focus trap in modals
+- [ ] Reduced motion: `@media (prefers-reduced-motion: reduce)` disables animations
+
+### 8.6 Testing (every deliverable)
+- [ ] Unit tests for all new functions (target >80% line coverage)
+- [ ] Integration tests for API endpoints (request → response contract)
+- [ ] Thread safety tests for shared mutable state
+- [ ] Use `tmp_path` fixtures — never pollute real data directories
+- [ ] Test error paths, not just happy paths
+
+### 8.7 DevOps (project-level, set up once)
+- [ ] CI pipeline runs lint + type check + tests on every push/PR
+- [ ] Dependency versions pinned (`==` not `>=`) with automated update PRs
+- [ ] Security scanning (`pip-audit`, Dependabot) in CI
+- [ ] Pre-commit hooks for formatting and lint
+
+### Role Integration
+
+| Role                | Must Apply Sections                     |
+|---------------------|-----------------------------------------|
+| System Engineer     | 8.1, 8.2, 8.3, 8.4, 8.5 (in SAD/HLD)  |
+| Backend Developer   | 8.1, 8.2, 8.3, 8.4, 8.6               |
+| Frontend Developer  | 8.4, 8.5, 8.6                          |
+| Unit Tester         | 8.6                                     |
+| Integration Tester  | 8.6                                     |
+| Security Engineer   | 8.1 (audit all)                         |
+| Release Engineer    | 8.7                                     |
+
+---
+
+## 9. EMERGENCY OVERRIDE
 
 If user says "skip the process" or "just code it":
 1. Acknowledge. 2. Log bypass. 3. Still apply coding + basic test standards.
 4. Mark: `// TODO: Delivered without full process. See CLAUDE.md.`
+5. **Section 8 (Production-Readiness) still applies** — security, logging, i18n, and a11y are not optional even in bypass mode.
 
 ---
 
-## 9. CONTINUOUS IMPROVEMENT
+## 10. CONTINUOUS IMPROVEMENT
 
 After every task: what went well, what to improve, patterns to capture.
 
 ---
 
-## 10. LESSONS LEARNED
+## 11. LESSONS LEARNED
 
-Patterns confirmed during Phase 1 delivery. Apply to all future phases.
+Patterns confirmed during delivery. Apply to all future work.
 
-### 10.1 API Contract Alignment
+### 11.1 API Contract Alignment
 - Define field names in SAD interface contracts BEFORE any frontend work.
 - Frontend and backend MUST use identical field names (e.g., `full_name` not `name`,
   `search_criteria` not `preferences`). Mismatches cause cascading fixes.
 - Run a contract check between SAD field names and frontend code before integration.
 
-### 10.2 Flask Route Ordering
+### 11.2 Flask Route Ordering
 - Place static routes BEFORE parameterized routes (`/api/x/export` before `/api/x/<id>`).
 - Flask matches routes top-down; a parameterized route can shadow a static sibling.
 
-### 10.3 Pydantic Model Serialization
+### 11.3 Pydantic Model Serialization
 - Pydantic models are NOT directly JSON-serializable by Flask's `jsonify`.
 - Always call `.model_dump()` before passing to `jsonify`.
 - Use attribute access (`obj.field`), not dict access (`obj["field"]`), on Pydantic models.
 
-### 10.4 Security Checks During Build
+### 11.4 Security Checks During Build
 - Add path traversal protection (allowlist regex) on ANY endpoint accepting filenames.
 - Add global error handlers early — unhandled exceptions leak stack traces as HTML.
 - Bind to `127.0.0.1`, never `0.0.0.0`, for local-only applications.
 
-### 10.5 Testing Insights
+### 11.5 Testing Insights
 - Thread safety tests should use multiple threads with high iteration counts (10 x 1000).
 - Integration tests catch field name mismatches that unit tests miss — run them early.
 - Use `tmp_path` fixtures for filesystem tests to avoid polluting real data directories.
 - Exit code 15 on Windows with gevent is a signal handling quirk, not a test failure.
 
-### 10.6 Electron + Python Integration
+### 11.6 Electron + Python Integration
 - `python-backend.js` must check for a local venv (`venv/Scripts/python.exe`) before system Python.
   Otherwise the spawned process gets `ModuleNotFoundError` because system Python lacks Flask.
 - Electron's `app.isPackaged` is undefined outside Electron context — guard with
@@ -259,3 +330,17 @@ Patterns confirmed during Phase 1 delivery. Apply to all future phases.
   Electron's bundled Chromium cannot be reused because Playwright requires persistent browser
   contexts with a custom user data directory, which is incompatible with Electron's embedded binary.
   The original shared-Chromium strategy (ADR-006) was abandoned after discovering this limitation.
+
+### 11.7 Production-Readiness Is Not a Phase
+- Retrofitting i18n into 460+ hardcoded strings across 7 route files, 19 JS modules, and 1 HTML
+  template cost an entire session. Had `t()` been used from the first endpoint, it would have been
+  free — just a different function call for the same string.
+- Same for accessibility: adding ARIA to 50+ elements, keyboard navigation to 5 components, and
+  focus traps to 4 modals after the fact required re-reading every file. Building it in means
+  writing `<button>` instead of `<span onclick>` — zero extra effort.
+- SQLite WAL mode is a 2-line PRAGMA. Retry with backoff is a 30-line wrapper. Both should be
+  in the first commit, not discovered after production issues.
+- Security headers, auth middleware, rate limiting, and error handlers should be in `create_app()`
+  from the very first endpoint. Adding them later means auditing every existing route.
+- **Rule**: Section 8 checklist items are requirements for Phase 5-6 (Build), not Phase 12 (Security Audit).
+  The Security Audit confirms they were done, not does them for the first time.
