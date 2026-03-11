@@ -24,14 +24,15 @@ _locale: str = "en"
 _locales_dir: Path = Path(__file__).resolve().parent.parent / "static" / "locales"
 
 
-def _load_locale(locale: str) -> dict:
+def _load_locale(locale: str) -> dict[str, object]:
     """Load a locale JSON file and return the parsed dict."""
     path = _locales_dir / f"{locale}.json"
     if not path.exists():
         logger.warning("Locale file not found: %s", path)
         return {}
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        result: dict[str, object] = json.loads(path.read_text(encoding="utf-8"))
+        return result
     except (json.JSONDecodeError, OSError) as e:
         logger.warning("Failed to load locale %s: %s", locale, e)
         return {}
