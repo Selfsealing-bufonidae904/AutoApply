@@ -44,6 +44,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **14 new tests**: Favorite DB (6), favorite API (3), comparison API (5) — total 51 resume tests
   - **12 new i18n keys**: compare, favorite, unfavorite, diff_added/removed/unchanged, etc.
   - **WCAG 2.1 AA accessible**: ARIA labels on stars/checkboxes, diff region roles, keyboard-navigable
+- **Code Signing & Notarization (TASK-021, D-4)**: Configure electron-builder for platform code signing. (FR-126 to FR-130, ADR-025, ADR-026)
+  - **Windows signing**: NSIS installer signed via `WIN_CSC_LINK` / `WIN_CSC_KEY_PASSWORD` secrets
+  - **macOS signing + notarization**: DMG signed with Developer ID, notarized via `@electron/notarize`
+  - **Hardened runtime**: macOS entitlements for JIT + unsigned memory (Electron/Node.js/Python)
+  - **CI integration**: Release workflow passes 7 signing secrets as env vars (opt-in, graceful skip)
+  - **Setup guide**: `docs/guides/code-signing.md` with step-by-step instructions for both platforms
+  - **No breaking changes**: Unsigned builds continue to work when secrets are not configured
+
+### Changed
+- **Traceability matrix v6.0**: FR-027 and FR-029 marked N/A (deprecated), 8 new rows for TASK-021
+- **CLAUDE.md v4.2**: Added principle #9 (GitHub Issues for every implementation), lesson 12.8 (issue lifecycle)
 
 ## [1.9.0] - 2026-03-11
 

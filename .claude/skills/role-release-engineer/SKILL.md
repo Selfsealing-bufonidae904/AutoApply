@@ -176,6 +176,7 @@ See `references/cicd-patterns.md` for gh CLI commands and PR templates.
 - [ ] PR created with full description (if applicable).
 - [ ] CI checks green (lint, test, security).
 - [ ] Squash-merged to `master`.
+- [ ] **GitHub Issue closed** with completion comment referencing commit hash.
 
 ## Escalation
 - **To Security Engineer**: Last-minute finding.

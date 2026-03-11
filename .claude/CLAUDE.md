@@ -1,4 +1,4 @@
-# Enterprise Engineering Framework — CLAUDE.md v4.1
+# Enterprise Engineering Framework — CLAUDE.md v4.2
 
 > **Supreme Governance Document**
 > Claude MUST read this file completely before taking any action.
@@ -148,6 +148,7 @@ Test         Test         Audit        ation         Package
 6. **Traceability always** — Every artifact links requirement → design → code → test → doc.
 7. **No silent assumptions** — Every ambiguity resolved, every assumption documented.
 8. **Production-readiness built in** — Security, i18n, a11y, logging, resilience are requirements of the Build phase (§8), not afterthoughts. Every new endpoint uses `t()`, every new UI element has ARIA, every external call has retry+timeout.
+9. **GitHub Issues for every implementation** — Every task (TASK-NNN) MUST have a corresponding GitHub issue. Create the issue at the START of implementation (Phase 1/2), update it during build with progress notes, and close it with a completion comment referencing the commit hash when pushed. Use `gh issue create` and `gh issue close` via CLI.
 
 ---
 
@@ -401,3 +402,12 @@ Patterns confirmed during delivery. Apply to all future work.
   from the very first endpoint. Adding them later means auditing every existing route.
 - **Rule**: Section 8 checklist items are requirements for Phase 5-6 (Build), not Phase 12 (Security Audit).
   The Security Audit confirms they were done, not does them for the first time.
+
+### 12.8 GitHub Issue Lifecycle
+- Every TASK-NNN MUST have a corresponding GitHub issue. Create it at the START of the
+  implementation (Phase 1, alongside project planning), not retroactively after delivery.
+- Use `gh issue create --title "..." --label "..." --body "..."` to create issues via CLI.
+- Update the issue with progress comments during long-running tasks if needed.
+- Close the issue with `gh issue close N --comment "Completed in commit <hash>."` when pushed.
+- If an existing open issue matches the task being implemented, use that issue instead of creating a duplicate.
+- **Rule**: The Release Engineer checklist includes "GitHub Issue closed" — a task is NOT done until the issue is closed.

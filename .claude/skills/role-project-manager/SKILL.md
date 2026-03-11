@@ -80,7 +80,8 @@ Upon receiving a task, classify and activate the right roles:
 
 | # | Phase | Role(s) | Deliverable | Size | Depends On | Status |
 |---|-------|---------|-------------|------|------------|--------|
-| 1 | Program alignment | PgM | Alignment confirmation | S | — | ⬜ |
+| 0 | GitHub Issue | PjM | `gh issue create` with title + labels | S | — | ⬜ |
+| 1 | Program alignment | PgM | Alignment confirmation | S | 0 | ⬜ |
 | 2 | Project planning | PjM | This plan + role activation | S | 1 | ⬜ |
 | 3 | Product vision | PM | PRD + user stories | S-M | 2 | ⬜ |
 | 4 | Requirements | RA | SRS document | M | 3 | ⬜ |
@@ -158,6 +159,7 @@ When the user requests additional work mid-execution:
 
 A task is DONE only when ALL of the following are true for ALL activated roles:
 
+- [ ] **GitHub Issue created** at start (`gh issue create`) and **closed** at end (`gh issue close` with commit hash).
 - [ ] All activated role checklists passed (every role has its own checklist).
 - [ ] All acceptance criteria met (from SRS).
 - [ ] All unit tests passing with coverage ≥ 90% line / ≥ 85% branch.

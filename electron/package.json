@@ -19,6 +19,7 @@
   "author": "AutoApply",
   "license": "MIT",
   "devDependencies": {
+    "@electron/notarize": "^2.5.0",
     "canvas": "^3.2.1",
     "electron": "^33.0.0",
     "electron-builder": "^25.0.0",
@@ -65,12 +66,19 @@
     ],
     "win": {
       "target": "nsis",
-      "icon": "icons/icon.ico"
+      "icon": "icons/icon.ico",
+      "signingHashAlgorithms": ["sha256"],
+      "signDlls": false
     },
     "mac": {
       "target": "dmg",
       "icon": "icons/icon.icns",
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist",
+      "notarize": true
     },
     "linux": {
       "target": "AppImage",
