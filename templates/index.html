@@ -345,6 +345,7 @@
     <li role="presentation"><a role="tab" data-screen="profile" aria-selected="false" tabindex="-1" data-i18n="nav.profile">Profile</a></li>
     <li role="presentation"><a role="tab" data-screen="analytics" aria-selected="false" tabindex="-1" data-i18n="nav.analytics">Analytics</a></li>
     <li role="presentation"><a role="tab" data-screen="resumes" aria-selected="false" tabindex="-1" data-i18n="nav.resumes">Resume Library</a></li>
+    <li role="presentation"><a role="tab" data-screen="knowledge-base" aria-selected="false" tabindex="-1" data-i18n="nav.knowledge_base">Knowledge Base</a></li>
     <li role="presentation"><a role="tab" data-screen="settings" aria-selected="false" tabindex="-1" data-i18n="nav.settings">Settings</a></li>
   </ul>
   <div class="nav-right">
@@ -631,6 +632,259 @@
                 data-i18n="resumes.back_to_library">Back to Library</button>
       </div>
       <div id="resume-detail-content" class="resume-detail-body">
+      </div>
+    </div>
+  </div>
+
+  <!-- KNOWLEDGE BASE -->
+  <div class="screen hidden" id="screen-knowledge-base" role="tabpanel" aria-label="Knowledge Base">
+    <h2 data-i18n="kb.title">Knowledge Base</h2>
+
+    <!-- Stats cards -->
+    <div id="kb-stats" class="kb-stats-grid" role="region" aria-label="Knowledge Base statistics" aria-live="polite"></div>
+
+    <!-- Upload section -->
+    <div class="card" style="margin:16px 0;">
+      <h3 data-i18n="kb.upload_title">Upload Documents</h3>
+      <p class="text-muted" data-i18n="kb.upload_desc">Upload resumes, project descriptions, LinkedIn exports — the more, the better!</p>
+      <div class="flex-row gap-md" style="align-items:center;">
+        <input type="file" id="kb-upload-input" accept=".pdf,.docx,.txt,.md"
+               aria-label="Choose document to upload" class="form-input" style="max-width:300px;">
+        <button type="button" class="btn btn-primary" onclick="uploadKBDocument()"
+                data-i18n="kb.upload_title">Upload</button>
+      </div>
+      <p class="text-muted" style="margin-top:8px;" data-i18n="kb.upload_formats">Supported: PDF, DOCX, TXT, MD</p>
+      <div id="kb-upload-status" class="kb-upload-status" aria-live="polite"></div>
+    </div>
+
+    <!-- Filter & search controls -->
+    <div class="flex-row gap-md" style="margin-bottom:12px; align-items:center;">
+      <select id="kb-filter-category" class="form-input" style="max-width:200px;"
+              onchange="filterKBCategory(this.value)"
+              aria-label="Filter by category">
+        <option value="all" data-i18n="kb.filter_all">All Categories</option>
+        <option value="experience" data-i18n="kb.category_experience">Experience</option>
+        <option value="skill" data-i18n="kb.category_skill">Skills</option>
+        <option value="education" data-i18n="kb.category_education">Education</option>
+        <option value="project" data-i18n="kb.category_project">Projects</option>
+        <option value="certification" data-i18n="kb.category_certification">Certifications</option>
+        <option value="summary" data-i18n="kb.category_summary">Summary</option>
+      </select>
+      <input type="text" id="kb-search-input" class="form-input" style="max-width:300px;"
+             placeholder="Search entries..." aria-label="Search KB entries"
+             oninput="searchKB(this.value)">
+    </div>
+
+    <!-- Entries table -->
+    <div id="kb-entries-list" role="region" aria-label="Knowledge Base entries" aria-live="polite">
+    </div>
+
+    <!-- Pagination -->
+    <div id="kb-pagination" class="resume-pagination" role="navigation" aria-label="KB entries pagination">
+    </div>
+
+    <!-- Edit overlay -->
+    <div id="kb-edit-overlay" class="resume-detail-overlay hidden" role="dialog" aria-label="Edit KB entry">
+      <div class="kb-edit-content resume-detail-body"></div>
+    </div>
+
+    <!-- ATS Scoring section -->
+    <div class="card" style="margin:16px 0;">
+      <h3 data-i18n="ats.title">ATS Compatibility Score</h3>
+      <div class="flex-col gap-md">
+        <label data-i18n="ats.platform_label">ATS Platform
+          <select id="kb-ats-platform" class="form-input" aria-label="ATS platform profile">
+            <option value="default" data-i18n="ats.platform_default">Default (Balanced)</option>
+            <option value="greenhouse">Greenhouse</option>
+            <option value="lever">Lever</option>
+            <option value="workday">Workday</option>
+            <option value="ashby">Ashby</option>
+            <option value="icims">iCIMS</option>
+            <option value="taleo">Taleo</option>
+          </select>
+        </label>
+        <label>Job Description
+          <textarea id="kb-ats-jd" class="form-input" rows="4"
+                    placeholder="Paste a job description to analyze ATS compatibility..."
+                    aria-label="Job description for ATS scoring"></textarea>
+        </label>
+        <div>
+          <button type="button" class="btn btn-primary" onclick="analyzeATS()"
+                  data-i18n="ats.analyze_btn">Analyze ATS Compatibility</button>
+          <span id="kb-ats-status" aria-live="polite"></span>
+        </div>
+        <div id="kb-ats-result" role="region" aria-label="ATS scoring results" aria-live="polite"></div>
+      </div>
+    </div>
+
+    <!-- Resume Preview section -->
+    <div class="card" style="margin:16px 0;">
+      <h3 data-i18n="reuse.settings_title">Smart Resume Assembly</h3>
+      <div class="flex-col gap-md">
+        <label>Template
+          <select id="kb-preview-template" class="form-input" aria-label="Resume template">
+            <option value="classic">Classic</option>
+            <option value="modern">Modern</option>
+            <option value="academic">Academic</option>
+            <option value="minimal">Minimal</option>
+          </select>
+        </label>
+        <label>Job Description
+          <textarea id="kb-preview-jd" class="form-input" rows="4"
+                    placeholder="Paste a job description to auto-select KB entries..."
+                    aria-label="Job description for resume preview"></textarea>
+        </label>
+        <div>
+          <button type="button" class="btn btn-primary" onclick="previewKBResume()">Preview Resume</button>
+          <span id="kb-preview-status" aria-live="polite"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Preview overlay -->
+    <div id="kb-preview-overlay" class="resume-detail-overlay hidden" role="dialog" aria-label="Resume preview">
+      <div class="kb-preview-content resume-detail-body"></div>
+    </div>
+
+    <!-- Resume Builder button -->
+    <div class="card" style="margin:16px 0;">
+      <h3 data-i18n="builder.title">Resume Builder</h3>
+      <p class="text-muted" data-i18n="builder.desc">Drag and drop KB entries to manually build a custom resume.</p>
+      <button type="button" class="btn btn-primary" onclick="openResumeBuilder()"
+              data-i18n="builder.open_btn" aria-label="Open Resume Builder">Open Resume Builder</button>
+    </div>
+
+    <!-- Documents list -->
+    <div class="card" style="margin:16px 0;">
+      <h3>Uploaded Documents</h3>
+      <div id="kb-documents-list" role="region" aria-label="Uploaded documents list"></div>
+    </div>
+
+    <!-- Resume Builder Overlay -->
+    <div id="rb-overlay" class="resume-detail-overlay hidden" role="dialog" aria-modal="true" aria-label="Resume Builder">
+      <div class="rb-container">
+        <div class="rb-header">
+          <h2 data-i18n="builder.title">Resume Builder</h2>
+          <button type="button" class="btn" onclick="closeResumeBuilder()" aria-label="Close builder">&times;</button>
+        </div>
+
+        <div class="rb-layout">
+          <!-- Left panel: KB entries -->
+          <div class="rb-left-panel">
+            <h3 data-i18n="builder.kb_panel_title">Knowledge Base Entries</h3>
+            <div class="flex-row gap-sm" style="margin-bottom:8px;">
+              <select id="rb-kb-category" class="form-input" style="max-width:150px;" aria-label="Filter by category">
+                <option value="" data-i18n="kb.filter_all">All Categories</option>
+                <option value="experience" data-i18n="kb.category_experience">Experience</option>
+                <option value="skill" data-i18n="kb.category_skill">Skills</option>
+                <option value="education" data-i18n="kb.category_education">Education</option>
+                <option value="project" data-i18n="kb.category_project">Projects</option>
+                <option value="certification" data-i18n="kb.category_certification">Certifications</option>
+                <option value="summary" data-i18n="kb.category_summary">Summary</option>
+              </select>
+              <input type="text" id="rb-kb-search" class="form-input" placeholder="Search..." aria-label="Search KB entries">
+            </div>
+            <div id="rb-kb-entries" class="rb-entries-list" role="listbox" aria-label="Available KB entries"></div>
+          </div>
+
+          <!-- Right panel: Resume sections -->
+          <div class="rb-right-panel">
+            <h3 data-i18n="builder.resume_panel_title">Your Resume</h3>
+            <div class="rb-sections">
+              <div class="rb-section" data-section="summary">
+                <h4 data-i18n="kb.category_summary">Summary</h4>
+                <div id="rb-drop-summary" class="rb-drop-zone" data-section="summary" role="list" aria-label="Summary entries drop zone">
+                  <p class="text-muted rb-drop-placeholder" data-i18n="builder.drop_here">Drop entries here</p>
+                </div>
+              </div>
+              <div class="rb-section" data-section="experience">
+                <h4 data-i18n="kb.category_experience">Experience</h4>
+                <div id="rb-drop-experience" class="rb-drop-zone" data-section="experience" role="list" aria-label="Experience entries drop zone">
+                  <p class="text-muted rb-drop-placeholder" data-i18n="builder.drop_here">Drop entries here</p>
+                </div>
+              </div>
+              <div class="rb-section" data-section="skill">
+                <h4 data-i18n="kb.category_skill">Skills</h4>
+                <div id="rb-drop-skill" class="rb-drop-zone" data-section="skill" role="list" aria-label="Skills entries drop zone">
+                  <p class="text-muted rb-drop-placeholder" data-i18n="builder.drop_here">Drop entries here</p>
+                </div>
+              </div>
+              <div class="rb-section" data-section="education">
+                <h4 data-i18n="kb.category_education">Education</h4>
+                <div id="rb-drop-education" class="rb-drop-zone" data-section="education" role="list" aria-label="Education entries drop zone">
+                  <p class="text-muted rb-drop-placeholder" data-i18n="builder.drop_here">Drop entries here</p>
+                </div>
+              </div>
+              <div class="rb-section" data-section="project">
+                <h4 data-i18n="kb.category_project">Projects</h4>
+                <div id="rb-drop-project" class="rb-drop-zone" data-section="project" role="list" aria-label="Project entries drop zone">
+                  <p class="text-muted rb-drop-placeholder" data-i18n="builder.drop_here">Drop entries here</p>
+                </div>
+              </div>
+              <div class="rb-section" data-section="certification">
+                <h4 data-i18n="kb.category_certification">Certifications</h4>
+                <div id="rb-drop-certification" class="rb-drop-zone" data-section="certification" role="list" aria-label="Certification entries drop zone">
+                  <p class="text-muted rb-drop-placeholder" data-i18n="builder.drop_here">Drop entries here</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Page indicator + controls -->
+            <div class="rb-controls">
+              <div class="rb-page-row">
+                <span id="rb-page-indicator" class="rb-page-indicator" aria-live="polite" data-i18n="builder.page_empty">No entries selected</span>
+                <label class="rb-toggle-label">
+                  <input type="checkbox" id="rb-one-page-toggle"> <span data-i18n="builder.one_page_mode">One-page mode</span>
+                </label>
+              </div>
+              <div class="flex-row gap-sm" style="margin-top:8px;">
+                <label>Template
+                  <select id="rb-template-select" class="form-input" style="max-width:150px;" aria-label="Resume template">
+                    <option value="classic">Classic</option>
+                    <option value="modern">Modern</option>
+                    <option value="academic">Academic</option>
+                    <option value="minimal">Minimal</option>
+                  </select>
+                </label>
+              </div>
+              <div class="flex-row gap-sm" style="margin-top:12px; flex-wrap:wrap;">
+                <button type="button" class="btn btn-primary" onclick="previewBuilderResume()"
+                        data-i18n="builder.preview_btn">Preview PDF</button>
+                <button type="button" class="btn" onclick="document.getElementById('rb-autofill-section').classList.toggle('hidden')"
+                        data-i18n="builder.autofill_btn">Auto-Fill from JD</button>
+                <div style="display:flex; align-items:center; gap:6px;">
+                  <input type="text" id="rb-preset-name" class="form-input" style="max-width:200px;"
+                         placeholder="Preset name..." aria-label="Preset name">
+                  <button type="button" class="btn" onclick="savePreset()"
+                          data-i18n="builder.save_preset">Save Preset</button>
+                </div>
+                <span id="rb-preview-status" aria-live="polite"></span>
+              </div>
+            </div>
+
+            <!-- Auto-fill section (hidden by default) -->
+            <div id="rb-autofill-section" class="hidden" style="margin-top:12px;">
+              <textarea id="rb-autofill-jd" class="form-input" rows="3"
+                        placeholder="Paste a job description to auto-select best entries..."
+                        aria-label="Job description for auto-fill"></textarea>
+              <div style="margin-top:6px;">
+                <button type="button" class="btn btn-primary" onclick="autoFillFromJD()"
+                        data-i18n="builder.autofill_go">Auto-Fill</button>
+                <span id="rb-autofill-status" aria-live="polite"></span>
+              </div>
+            </div>
+
+            <!-- Preview iframe -->
+            <iframe id="rb-preview-iframe" class="hidden" style="width:100%; height:600px; margin-top:12px; border:1px solid var(--border);"
+                    title="Resume preview"></iframe>
+          </div>
+        </div>
+
+        <!-- Presets panel -->
+        <div class="rb-presets-panel" style="margin-top:16px;">
+          <h3 data-i18n="builder.presets_title">Saved Presets</h3>
+          <div id="rb-presets-list" role="list" aria-label="Saved resume presets"></div>
+        </div>
       </div>
     </div>
   </div>

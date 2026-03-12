@@ -23,6 +23,9 @@ import { closeModal } from './modals.js';
 import { updateAIIndicators } from './ai-status.js';
 import { switchAnalyticsPeriod } from './analytics.js';
 import { loadResumes, viewResume, closeResumeDetail, previewResumePdf, downloadResume, switchResumePage, initResumeSearch, toggleFavorite, compareSelected, closeCompareView, onCompareCheck } from './resumes.js';
+import { loadKnowledgeBase, loadKBEntries, uploadKBDocument, editKBEntry, saveKBEntry, closeKBEdit, deleteKBEntry, filterKBCategory, searchKB, switchKBPage, loadKBDocuments, initKnowledgeBase, analyzeATS } from './knowledge-base.js';
+import { previewKBResume, closeKBPreview, initResumePreview } from './resume-preview.js';
+import { initResumeBuilder, openResumeBuilder, closeResumeBuilder, addToResume, removeFromResume, moveEntryUp, moveEntryDown, savePreset, loadPreset, deletePreset, previewBuilderResume, autoFillFromJD } from './resume-builder.js';
 
 // ── Expose globals for inline onclick handlers in HTML ──────────
 // These are used by onclick attributes in the HTML template.
@@ -76,6 +79,28 @@ window.closeCompareView = closeCompareView;
 window.onCompareCheck = onCompareCheck;
 window.switchScreen = switchScreen;
 window.showScreen = switchScreen;
+window.uploadKBDocument = uploadKBDocument;
+window.editKBEntry = editKBEntry;
+window.saveKBEntry = saveKBEntry;
+window.closeKBEdit = closeKBEdit;
+window.deleteKBEntry = deleteKBEntry;
+window.filterKBCategory = filterKBCategory;
+window.searchKB = searchKB;
+window.switchKBPage = switchKBPage;
+window.analyzeATS = analyzeATS;
+window.previewKBResume = previewKBResume;
+window.closeKBPreview = closeKBPreview;
+window.openResumeBuilder = openResumeBuilder;
+window.closeResumeBuilder = closeResumeBuilder;
+window.addToResume = addToResume;
+window.removeFromResume = removeFromResume;
+window.moveEntryUp = moveEntryUp;
+window.moveEntryDown = moveEntryDown;
+window.savePreset = savePreset;
+window.loadPreset = loadPreset;
+window.deletePreset = deletePreset;
+window.previewBuilderResume = previewBuilderResume;
+window.autoFillFromJD = autoFillFromJD;
 window.t = t;
 window.getLocale = getLocale;
 window.setLocale = setLocale;
@@ -156,6 +181,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   initSocket();
   initAccessibility();
   initResumeSearch();
+  initKnowledgeBase();
+  initResumePreview();
+  initResumeBuilder();
 
   try {
     const res = await fetch('/api/setup/status');

@@ -4,7 +4,9 @@ All notable changes to AutoApply are documented in this file.
 
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [2.3.0] - 2026-03-12
+
+Smart Resume Reuse with Knowledge Base — upload career documents once, reuse entries across applications with zero API calls per resume.
 
 ### Added
 - **Analytics Dashboard v2.0 (TASK-017)**: Complete analytics overhaul replacing 3 basic charts with 8 rich visualizations. (FR-090 to FR-101, ADR-021)
@@ -87,8 +89,98 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **FR-030**: Log capture — backend.log, 10MB rotation, stdout/stderr piping, append mode
   - **Traceability**: 7 items upgraded from ⚠️ to ✅
 
+- **Smart Resume Reuse M1: KB Foundation (TASK-030)**: Backend data layer for smart resume reuse pipeline. (FR-030-01 to FR-030-12, NFR-030-01 to NFR-030-06, ADR-027, ADR-028)
+  - **Document parser**: Extract text from PDF, DOCX, TXT, and MD files via `core/document_parser.py`
+  - **Knowledge Base**: LLM-based extraction of categorized entries, CRUD with dedup, soft-delete, stats
+  - **Resume parser**: Parse markdown resumes into KB entries for migration and ingestion
+  - **Experience calculator**: Domain-specific years calculation from roles table
+  - **Config models**: `ResumeReuseConfig` and `LatexConfig` Pydantic models with backward-compatible defaults
+  - **DB schema**: 3 new tables (knowledge_base, uploaded_documents, roles) + 2 new columns on resume_versions
+  - **i18n**: 46 new keys (33 kb + 13 reuse) in en.json and es.json
+  - **89 unit tests + 11 integration tests**: Full coverage of all M1 modules
+- **Smart Resume Reuse M2: Scoring Engine (TASK-030)**: TF-IDF scoring engine and JD analyzer. (FR-030-13 to FR-030-19, NFR-030-07 to NFR-030-10, ADR-029, ADR-030)
+  - **TF-IDF scorer**: Hand-rolled cosine similarity using only stdlib (collections.Counter, math, re)
+  - **JD analyzer**: Keyword extraction, section detection, 100+ tech terms, 40+ synonym aliases, n-gram extraction
+  - **Keyword boosting**: Required (+0.15 max), preferred (+0.05 max), tech term (+0.05 max) bonuses
+  - **ONNX interface**: Optional embedding blending (0.3*TF-IDF + 0.7*ONNX), TF-IDF fallback when unavailable
+  - **38 new tests**: JD analysis (10), TF-IDF internals (13), scoring (8), ONNX blending (3), section detection (4)
+  - **Zero new dependencies**: Stdlib only for M2
+- **Smart Resume Reuse M3: LaTeX Engine (TASK-030)**: LaTeX compiler, templates, and TinyTeX bundler. (FR-030-20 to FR-030-26, NFR-030-11 to NFR-030-13, ADR-031)
+  - **LaTeX compiler**: `core/latex_compiler.py` — pdflatex discovery (bundled TinyTeX → PATH → common locations), special character escaping, Jinja2 rendering, PDF compilation with timeout
+  - **4 resume templates**: classic (helvet, standard), modern (accent colors), academic (palatino, education-first), minimal (10pt compact)
+  - **Custom Jinja2 delimiters**: `\VAR{}`, `\BLOCK{}` to avoid LaTeX brace conflicts (ADR-031)
+  - **TinyTeX bundler**: `electron/scripts/bundle-tinytex.js` — platform-specific download, extraction, package installation
+  - **31 new tests**: Escaping (12), pdflatex discovery (4), template rendering (8), compilation (5), convenience API (2)
+  - **New dependency**: jinja2 (template rendering)
+- **Smart Resume Reuse M4: Resume Assembly + Bot Integration (TASK-030)**: KB-first resume generation pipeline. (FR-030-27 to FR-030-32, NFR-030-14 to NFR-030-15, ADR-032)
+  - **Resume assembler**: `core/resume_assembler.py` — score KB entries against JD, select top per category, build LaTeX context, compile PDF (0 API calls)
+  - **KB-first bot flow**: `bot/bot.py` `_generate_docs()` tries KB assembly first, falls through to LLM, then ingests LLM output back into KB
+  - **Post-LLM ingestion**: LLM-generated resumes automatically parsed and inserted into KB for future reuse
+  - **Version tracking**: `resume_versions.reuse_source` (kb_assembly/llm_generated) + `source_entry_ids` (JSON array)
+  - **23 new tests**: Entry selection (5), context building (4), full assembly (5), PDF saving (3), ingestion (3), DB reuse (3)
+- **Smart Resume Reuse M5: Upload UI + KB Viewer + Preview (TASK-030)**: Full-stack KB management UI with upload, viewer, and resume preview. (FR-030-33 to FR-030-42, NFR-030-16 to NFR-030-18, ADR-033)
+  - **8 REST API endpoints**: Upload (`POST /api/kb/upload`), stats, list with filter/search/pagination, get/update/delete entry, documents list, resume preview (`POST /api/kb/preview`)
+  - **KB viewer module**: `static/js/knowledge-base.js` — stats cards, entries table, category filter, debounced search, pagination, edit/delete overlays, upload with status feedback
+  - **Resume preview module**: `static/js/resume-preview.js` — template picker (4 styles), JD textarea for auto-scoring, PDF iframe display with download
+  - **KB navigation tab**: New "Knowledge Base" tab between Resume Library and Settings, with full ARIA tablist integration
+  - **HTML screen**: Upload card, filter controls, entries table, edit/preview overlays, documents list
+  - **Blueprint registration**: `kb_bp` registered in `create_app()` with existing auth/rate-limit middleware
+  - **i18n**: `nav.knowledge_base` key added to en.json and es.json (33 KB + 13 reuse keys already from M1)
+  - **19 new tests**: Stats (2), list (4), get (2), update (3), delete (2), upload (3), documents (1), preview (2)
+  - **WCAG 2.1 AA**: ARIA labels, roles, aria-live regions, keyboard navigation, semantic HTML
+- **Smart Resume Reuse M6: ATS Scoring + Platform Profiles (TASK-030)**: ATS compatibility scoring with gap analysis and vendor-specific profiles. (FR-030-43 to FR-030-48, NFR-030-19 to NFR-030-20)
+  - **ATS composite scorer**: 5-component weighted score (keyword match 35%, section completeness 20%, skill match 20%, content length 15%, format compliance 10%)
+  - **Gap analysis**: Identifies matched/missing keywords, skills, and resume sections
+  - **7 ATS platform profiles**: Default, Greenhouse, Lever, Workday, Ashby, iCIMS, Taleo — each with vendor-specific weight adjustments
+  - **2 API endpoints**: `POST /api/kb/ats-score` (composite score + gaps), `GET /api/kb/ats-profiles` (list profiles)
+  - **ATS scoring UI**: Platform selector, JD textarea, color-coded score badge, component progress bars, missing keyword/skill/section badges
+  - **i18n**: 18 new keys in `ats` section (en.json + es.json)
+  - **31 new tests**: Component scorers (16), composite scorer (4), platform profiles (6), API endpoints (5)
+  - **WCAG 2.1 AA**: ARIA labels, aria-live results region, semantic HTML, keyboard navigation
+- **Smart Resume Reuse M7: Manual Resume Builder (TASK-030)**: Drag-and-drop resume builder with presets and one-page mode. (FR-030-49 to FR-030-54, NFR-030-21 to NFR-030-22)
+  - **Resume presets CRUD**: Save/load/update/delete named entry ID combinations with template choice
+  - **`resume_presets` table**: New SQLite table (id, name, entry_ids JSON, template, created_at, updated_at)
+  - **4 API endpoints**: `GET/POST /api/kb/presets`, `PUT/DELETE /api/kb/presets/<id>`
+  - **Drag-and-drop builder UI**: Full-screen overlay with left panel (KB entries + search/filter) and right panel (6 resume sections with drop zones)
+  - **Entry reorder**: Up/down controls within each resume section
+  - **One-page mode**: Live page indicator with line estimation (~55 lines/page), warning when exceeding 1 page
+  - **Auto-fill from JD**: Keyword-based auto-selection using ATS scoring with per-category limits
+  - **PDF preview**: Inline iframe preview using existing `/api/kb/preview` endpoint
+  - **i18n**: 27 new keys in `builder` section (en.json + es.json)
+  - **15 new tests**: Preset DB methods (7) + preset API endpoints (8)
+  - **WCAG 2.1 AA**: ARIA labels on panels/zones/buttons, aria-live regions, keyboard-accessible controls, reduced motion
+- **Smart Resume Reuse M8: Performance (TASK-030)**: PDF cache, JD classifier, async upload. (FR-030-55 to FR-030-62, NFR-030-23 to NFR-030-24)
+  - **PDF compilation cache**: Content-hash LRU cache (`core/pdf_cache.py`) — SHA256[:16] keys, max 200 files, lazy eviction
+  - **LaTeX compiler integration**: `compile_latex()` checks cache before compilation, stores result after (controlled by `use_cache` param)
+  - **JD classifier**: Keyword-based job type detection (`core/jd_classifier.py`) — 9 job types, related type expansion, KB entry pre-filtering
+  - **Async document upload**: `POST /api/kb/upload/async` returns 202 with task_id, background thread processes file
+  - **Upload status polling**: `GET /api/kb/upload/status/<task_id>` — returns processing/completed/failed with entry count
+  - **Thread safety**: `threading.Lock` protects shared upload task dict, daemon threads for clean shutdown
+  - **30 new tests**: PDF cache (9), JD classifier (14), async upload (5), LaTeX cache integration (2)
+  - **Security**: 6 findings all PASS — content-hash keys prevent path traversal, UUID4 task IDs prevent enumeration
+- **Smart Resume Reuse M9: Intelligence (TASK-030)**: Outcome-based learning, cover letter KB assembly, reuse stats. (FR-030-63 to FR-030-70, NFR-030-25 to NFR-030-26)
+  - **Outcome-based learning**: `kb_usage_log` table tracks entry usage per application; `effectiveness_score` recalculated from interview/total ratio
+  - **Feedback API**: `POST /api/kb/feedback` accepts outcome (interview/rejected/no_response), updates effectiveness scores
+  - **Effectiveness ranking**: `GET /api/kb/effectiveness` returns entries ranked by effectiveness_score
+  - **Cover letter KB assembly**: `core/cover_letter_assembler.py` — template-based cover letter from KB entries (0 API calls)
+  - **Reuse stats**: `GET /api/analytics/reuse-stats` — total assemblies, entries used, interview rate, avg effectiveness
+  - **JD classifier integration**: Resume assembler pre-filters entries by JD type before TF-IDF scoring
+  - **Effectiveness weighting**: TF-IDF scores blended with effectiveness_score (0.7 × tfidf + 0.3 × effectiveness)
+  - **DB migration**: 3 new columns on knowledge_base (effectiveness_score, usage_count, last_used_at) + kb_usage_log table
+  - **27 new tests**: Usage log (10), cover letter (4), JD integration (1), effectiveness weighting (2), API endpoints (10)
+  - **Security**: 6 findings all PASS — parameterized SQL, input validation, derived scores
+- **Smart Resume Reuse M10: Migration + Polish (TASK-030)**: Auto-migration of legacy files and LaTeX hardening. (FR-030-71 to FR-030-76, NFR-030-27 to NFR-030-28)
+  - **KB migrator**: `core/kb_migrator.py` — auto-migrates `.txt` experience files and `.md` resumes into KB on first startup
+  - **Migration pipeline**: `run_migration()` checks marker → migrates experiences + resumes → marks complete (idempotent)
+  - **Category guessing**: Keyword heuristics classify entries as experience/skill/education/certification
+  - **LaTeX backslash hardening**: Placeholder-based escaping prevents double-escaping of braces in `\textbackslash{}`
+  - **28 new tests**: Migration marker (3), experience files (6), resume files (4), full pipeline (4), category guessing (4), LaTeX escaping (7)
+  - **Security**: 6 findings all PASS — hardcoded paths, safe JSON, graceful error handling
+  - **TASK-030 COMPLETE**: All 10 milestones delivered (M1–M10)
+
 ### Changed
-- **Traceability matrix v10.0**: ALL 126 requirements now ✅ (0 ⚠️ remaining). TASK-026 to TASK-029 cleared final 13 items: analytics UI (3), resume library UI (5), resume comparison UI (4), electron distribution (1)
+- **Traceability matrix v15.0**: 230 requirements, all ✅ (0 ⚠️). TASK-030 M1-M10 adds 104 new requirements (76 FRs + 28 NFRs).
+- **CLAUDE.md v5.0**: Gitflow-lite branching model (develop + master), shared-workflows.md as single source of truth
 - **CLAUDE.md v4.2**: Added principle #9 (GitHub Issues for every implementation), lesson 12.8 (issue lifecycle)
 
 ## [1.9.0] - 2026-03-11

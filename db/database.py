@@ -105,6 +105,26 @@ CREATE TABLE IF NOT EXISTS roles (
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(title, company, start_date)
 );
+
+CREATE TABLE IF NOT EXISTS resume_presets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    entry_ids TEXT NOT NULL,
+    template TEXT NOT NULL DEFAULT 'classic',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS kb_usage_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_id INTEGER NOT NULL REFERENCES knowledge_base(id),
+    application_id INTEGER REFERENCES applications(id),
+    tfidf_score REAL,
+    outcome TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_ulog_entry ON kb_usage_log(entry_id);
+CREATE INDEX IF NOT EXISTS idx_ulog_app ON kb_usage_log(application_id);
 """
 
 
@@ -147,6 +167,23 @@ class Database:
             conn.execute("ALTER TABLE resume_versions ADD COLUMN reuse_source TEXT")
         if "source_entry_ids" not in rv_columns:
             conn.execute("ALTER TABLE resume_versions ADD COLUMN source_entry_ids TEXT")
+
+        # M9: Add effectiveness tracking columns to knowledge_base
+        kb_columns = {
+            row[1] for row in conn.execute("PRAGMA table_info(knowledge_base)").fetchall()
+        }
+        if "effectiveness_score" not in kb_columns:
+            conn.execute(
+                "ALTER TABLE knowledge_base ADD COLUMN effectiveness_score REAL DEFAULT 0.0"
+            )
+        if "usage_count" not in kb_columns:
+            conn.execute(
+                "ALTER TABLE knowledge_base ADD COLUMN usage_count INTEGER DEFAULT 0"
+            )
+        if "last_used_at" not in kb_columns:
+            conn.execute(
+                "ALTER TABLE knowledge_base ADD COLUMN last_used_at DATETIME"
+            )
 
     def save_application(
         self,
@@ -299,6 +336,8 @@ class Database:
         match_score: int | None,
         llm_provider: str | None,
         llm_model: str | None,
+        reuse_source: str | None = None,
+        source_entry_ids: str | None = None,
     ) -> int:
         """Insert a resume version record. Returns the new id."""
         with self._connect() as conn:
@@ -307,13 +346,15 @@ class Database:
                 INSERT INTO resume_versions (
                     application_id, job_title, company,
                     resume_md_path, resume_pdf_path,
-                    match_score, llm_provider, llm_model
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    match_score, llm_provider, llm_model,
+                    reuse_source, source_entry_ids
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     application_id, job_title, company,
                     resume_md_path, resume_pdf_path,
                     match_score, llm_provider, llm_model,
+                    reuse_source, source_entry_ids,
                 ),
             )
             return cursor.lastrowid  # type: ignore[return-value]
@@ -693,6 +734,167 @@ class Database:
             }
 
     # ------------------------------------------------------------------
+    # KB Usage Log + Effectiveness (TASK-030 M9)
+    # ------------------------------------------------------------------
+
+    def log_kb_usage(
+        self,
+        entry_ids: list[int],
+        application_id: int | None = None,
+        scores: dict[int, float] | None = None,
+    ) -> int:
+        """Log usage of KB entries for a resume assembly.
+
+        Also increments usage_count and updates last_used_at on each entry.
+
+        Args:
+            entry_ids: IDs of KB entries used.
+            application_id: Optional application ID this was for.
+            scores: Optional mapping of entry_id → tfidf_score.
+
+        Returns:
+            Number of log rows inserted.
+        """
+        if not entry_ids:
+            return 0
+
+        score_map = scores or {}
+        with self._connect() as conn:
+            for eid in entry_ids:
+                conn.execute(
+                    "INSERT INTO kb_usage_log (entry_id, application_id, tfidf_score) "
+                    "VALUES (?, ?, ?)",
+                    (eid, application_id, score_map.get(eid)),
+                )
+                conn.execute(
+                    "UPDATE knowledge_base SET usage_count = COALESCE(usage_count, 0) + 1, "
+                    "last_used_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (eid,),
+                )
+        return len(entry_ids)
+
+    def update_kb_outcome(
+        self,
+        application_id: int,
+        outcome: str,
+    ) -> int:
+        """Update outcome for all usage log entries tied to an application.
+
+        Also recalculates effectiveness_score for affected KB entries using
+        a weighted moving average: score = successes / total_uses.
+
+        Args:
+            application_id: The application that received feedback.
+            outcome: One of "interview", "rejected", "no_response".
+
+        Returns:
+            Number of usage log rows updated.
+        """
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "UPDATE kb_usage_log SET outcome = ? WHERE application_id = ?",
+                (outcome, application_id),
+            )
+            updated = cursor.rowcount
+
+            if updated > 0 and outcome == "interview":
+                # Get affected entry IDs
+                rows = conn.execute(
+                    "SELECT DISTINCT entry_id FROM kb_usage_log WHERE application_id = ?",
+                    (application_id,),
+                ).fetchall()
+
+                for row in rows:
+                    eid = row["entry_id"]
+                    # Recalculate: interviews / total logged uses
+                    stats = conn.execute(
+                        "SELECT COUNT(*) as total, "
+                        "SUM(CASE WHEN outcome = 'interview' THEN 1 ELSE 0 END) as wins "
+                        "FROM kb_usage_log WHERE entry_id = ? AND outcome IS NOT NULL",
+                        (eid,),
+                    ).fetchone()
+                    if stats and stats["total"] > 0:
+                        score = stats["wins"] / stats["total"]
+                        conn.execute(
+                            "UPDATE knowledge_base SET effectiveness_score = ? WHERE id = ?",
+                            (round(score, 4), eid),
+                        )
+
+        return updated
+
+    def get_kb_effectiveness(self, limit: int = 50) -> list[dict]:
+        """Return KB entries ranked by effectiveness_score.
+
+        Returns entries that have been used at least once, sorted by
+        effectiveness_score descending.
+        """
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT id, category, text, subsection, "
+                "COALESCE(effectiveness_score, 0.0) as effectiveness_score, "
+                "COALESCE(usage_count, 0) as usage_count, last_used_at "
+                "FROM knowledge_base "
+                "WHERE is_active = 1 AND COALESCE(usage_count, 0) > 0 "
+                "ORDER BY effectiveness_score DESC, usage_count DESC "
+                "LIMIT ?",
+                (limit,),
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_reuse_stats(self) -> dict:
+        """Return aggregate KB reuse statistics.
+
+        Returns:
+            Dict with keys: total_assemblies, total_entries_used,
+            unique_entries_used, interviews_from_kb, avg_effectiveness,
+            top_categories.
+        """
+        with self._connect() as conn:
+            # Total usage log entries (each = one entry used in one assembly)
+            total_used = conn.execute("SELECT COUNT(*) FROM kb_usage_log").fetchone()[0]
+
+            # Unique entries ever used
+            unique_used = conn.execute(
+                "SELECT COUNT(DISTINCT entry_id) FROM kb_usage_log"
+            ).fetchone()[0]
+
+            # Distinct application_ids = total assemblies
+            total_assemblies = conn.execute(
+                "SELECT COUNT(DISTINCT application_id) FROM kb_usage_log "
+                "WHERE application_id IS NOT NULL"
+            ).fetchone()[0]
+
+            # Interview outcomes
+            interviews = conn.execute(
+                "SELECT COUNT(DISTINCT application_id) FROM kb_usage_log "
+                "WHERE outcome = 'interview'"
+            ).fetchone()[0]
+
+            # Average effectiveness of used entries
+            avg_row = conn.execute(
+                "SELECT AVG(COALESCE(effectiveness_score, 0.0)) as avg_eff "
+                "FROM knowledge_base "
+                "WHERE is_active = 1 AND COALESCE(usage_count, 0) > 0"
+            ).fetchone()
+            avg_eff = round(avg_row["avg_eff"], 4) if avg_row["avg_eff"] else 0.0
+
+            # Top categories by usage
+            cats = conn.execute(
+                "SELECT kb.category, COUNT(*) as uses "
+                "FROM kb_usage_log ul JOIN knowledge_base kb ON ul.entry_id = kb.id "
+                "GROUP BY kb.category ORDER BY uses DESC"
+            ).fetchall()
+
+            return {
+                "total_assemblies": total_assemblies,
+                "total_entries_used": total_used,
+                "unique_entries_used": unique_used,
+                "interviews_from_kb": interviews,
+                "avg_effectiveness": avg_eff,
+                "top_categories": {r["category"]: r["uses"] for r in cats},
+            }
+
+    # ------------------------------------------------------------------
     # Roles (TASK-030 M1)
     # ------------------------------------------------------------------
 
@@ -1032,3 +1234,75 @@ class Database:
             "response_times": response_times,
             "daily": daily,
         }
+
+    # ------------------------------------------------------------------
+    # Resume Presets (TASK-030 M7)
+    # ------------------------------------------------------------------
+
+    def save_preset(
+        self,
+        name: str,
+        entry_ids: str,
+        template: str = "classic",
+    ) -> int:
+        """Create a resume preset. entry_ids is a JSON string like '[1,5,12]'."""
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "INSERT INTO resume_presets (name, entry_ids, template) VALUES (?, ?, ?)",
+                (name, entry_ids, template),
+            )
+            return cursor.lastrowid  # type: ignore[return-value]
+
+    def get_presets(self) -> list[dict]:
+        """Return all resume presets ordered by most recent first."""
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT * FROM resume_presets ORDER BY updated_at DESC, created_at DESC"
+            ).fetchall()
+            return [dict(r) for r in rows]
+
+    def get_preset(self, preset_id: int) -> dict | None:
+        """Return a single preset by ID."""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT * FROM resume_presets WHERE id = ?", (preset_id,)
+            ).fetchone()
+            return dict(row) if row else None
+
+    def update_preset(
+        self,
+        preset_id: int,
+        name: str | None = None,
+        entry_ids: str | None = None,
+        template: str | None = None,
+    ) -> bool:
+        """Update a preset. Returns True if found and updated."""
+        fields: list[str] = []
+        values: list[object] = []
+        if name is not None:
+            fields.append("name = ?")
+            values.append(name)
+        if entry_ids is not None:
+            fields.append("entry_ids = ?")
+            values.append(entry_ids)
+        if template is not None:
+            fields.append("template = ?")
+            values.append(template)
+        if not fields:
+            return False
+        fields.append("updated_at = CURRENT_TIMESTAMP")
+        values.append(preset_id)
+        with self._connect() as conn:
+            cursor = conn.execute(
+                f"UPDATE resume_presets SET {', '.join(fields)} WHERE id = ?",
+                tuple(values),
+            )
+            return cursor.rowcount > 0
+
+    def delete_preset(self, preset_id: int) -> bool:
+        """Delete a preset. Returns True if found and deleted."""
+        with self._connect() as conn:
+            cursor = conn.execute(
+                "DELETE FROM resume_presets WHERE id = ?", (preset_id,)
+            )
+            return cursor.rowcount > 0

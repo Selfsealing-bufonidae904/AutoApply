@@ -12,7 +12,7 @@
 ## 1. Purpose and Scope
 
 ### 1.1 Purpose
-This SRS specifies the functional and non-functional requirements for Milestone 1 (Foundation) of the Smart Resume Reuse feature (TASK-030). The audience is the System Engineer, Backend Developer, Unit Tester, Integration Tester, Security Engineer, and Release Engineer.
+This SRS specifies the functional and non-functional requirements for Milestones 1–4 (Foundation, Scoring, LaTeX Compilation, Resume Assembly + Bot Integration) of the Smart Resume Reuse feature (TASK-030). The audience is the System Engineer, Backend Developer, Unit Tester, Integration Tester, Security Engineer, and Release Engineer.
 
 ### 1.2 Scope
 **In scope (M1)**:
@@ -25,10 +25,31 @@ This SRS specifies the functional and non-functional requirements for Milestone 
 - Pydantic config models (ResumeReuseConfig, LatexConfig)
 - i18n keys for KB and reuse settings UI (pre-populated for M5)
 
-**Explicitly out of scope (M1)**:
-- TF-IDF scoring engine (M2)
-- LaTeX compilation (M3)
-- Bot integration and resume assembly (M4)
+**In scope (M2)**:
+- TF-IDF cosine similarity scoring engine (stdlib only)
+- Job description analyzer: keyword extraction, section detection, tech term recognition
+- Synonym normalization for common technology aliases
+- ONNX embedding interface (optional, mocked in tests)
+- Score blending: 0.3 * TF-IDF + 0.7 * ONNX when available, TF-IDF only otherwise
+
+**In scope (M3)**:
+- LaTeX special character escaping for safe template rendering
+- pdflatex binary discovery (bundled TinyTeX, system PATH, common install locations)
+- Jinja2-based LaTeX template rendering with custom delimiters (`\VAR{}`, `\BLOCK{}`)
+- PDF compilation via pdflatex subprocess with configurable timeout
+- Four built-in resume templates (classic, modern, academic, minimal)
+- TinyTeX bundling script for cross-platform distribution (Windows, macOS, Linux)
+- `compile_resume()` convenience function combining template rendering and PDF compilation
+
+**In scope (M4)**:
+- Resume assembly from KB entries scored against a JD (0 API calls when KB has sufficient entries)
+- Entry selection with configurable per-category minimums (e.g., min 3 experience, 1 summary)
+- Bot `_generate_docs` KB-first flow: attempt KB assembly, fall back to LLM if insufficient entries
+- Post-LLM ingestion: auto-parse LLM-generated resume into KB entries for future reuse
+- `resume_versions.reuse_source` column tracking origin (`kb_assembly` or `llm_generated`)
+- `resume_versions.source_entry_ids` column storing JSON array of KB entry IDs used in assembly
+
+**Explicitly out of scope (M1/M2/M3/M4)**:
 - Frontend UI, upload endpoints, KB viewer (M5)
 - ATS scoring (M6), manual builder (M7), performance (M8), intelligence (M9), migration (M10)
 
@@ -336,6 +357,386 @@ This feature extends the existing AutoApply bot. Currently, every job applicatio
 
 ---
 
+### FR-030-13: TF-IDF Cosine Similarity Scoring
+
+**Description**: The system shall score KB entries against job description text using hand-rolled TF-IDF cosine similarity (stdlib only: `collections.Counter`, `math`, `re`). Scores range from 0.0 to 1.0.
+
+**Priority**: P0 (M2 ship-blocking)
+**Source**: US-102 from PRD
+**Dependencies**: FR-030-04 (KB entries must exist)
+
+**Acceptance Criteria**:
+
+- **AC-030-13-1**: Given a JD and a list of KB entries, When `score_kb_entries()` is called, Then each entry receives a cosine similarity score in [0.0, 1.0].
+- **AC-030-13-2**: Given entries with scores below `min_score`, When scoring completes, Then those entries are excluded from results.
+- **AC-030-13-3**: Given scored results, When returned, Then they are sorted by score descending.
+- **AC-030-13-4**: Given a backend JD and backend + frontend KB entries, When scored, Then backend entries rank higher than unrelated frontend entries.
+
+**Negative Cases**:
+- **AC-030-13-N1**: Given an empty JD or empty entries list, When `score_kb_entries()` is called, Then an empty list is returned.
+- **AC-030-13-N2**: Given entries with empty text fields, When scored, Then those entries receive a score of 0.0.
+
+---
+
+### FR-030-14: Job Description Keyword Extraction
+
+**Description**: The system shall analyze job description text to extract required keywords, preferred keywords, recognized tech terms, and n-gram phrases.
+
+**Priority**: P0 (M2 ship-blocking)
+**Source**: US-102 from PRD
+**Dependencies**: None
+
+**Acceptance Criteria**:
+
+- **AC-030-14-1**: Given a JD with a "Requirements" section, When `analyze_jd()` is called, Then required keywords are extracted from that section.
+- **AC-030-14-2**: Given a JD with a "Nice to Have" section, When `analyze_jd()` is called, Then preferred keywords are extracted from that section.
+- **AC-030-14-3**: Given a JD mentioning Python, Flask, Docker, When analyzed, Then those terms appear in `tech_terms`.
+- **AC-030-14-4**: Given a JD, When analyzed, Then 2-3 word n-gram phrases are extracted.
+
+**Negative Cases**:
+- **AC-030-14-N1**: Given empty or None text, When `analyze_jd()` is called, Then empty result dict is returned with all fields as empty lists/dicts.
+
+---
+
+### FR-030-15: JD Section Detection
+
+**Description**: The system shall detect structural sections in job descriptions (requirements, preferred, responsibilities, benefits, about) by matching header patterns.
+
+**Priority**: P1
+**Source**: Derived from FR-030-14
+**Dependencies**: None
+
+**Acceptance Criteria**:
+
+- **AC-030-15-1**: Given a JD with "Requirements:" header, When sections are detected, Then a "requirements" section is returned with its content.
+- **AC-030-15-2**: Given a JD with "Nice to Have:" header, When sections are detected, Then a "preferred" section is returned.
+- **AC-030-15-3**: Given a JD with "Responsibilities:" header, When sections are detected, Then a "responsibilities" section is returned.
+
+**Negative Cases**:
+- **AC-030-15-N1**: Given plain text without section headers, When analyzed, Then sections dict is empty.
+
+---
+
+### FR-030-16: Synonym Normalization
+
+**Description**: The system shall normalize technology term aliases to canonical forms (e.g., "JS" → "javascript", "k8s" → "kubernetes", "postgres" → "postgresql") using a built-in synonym map of 40+ aliases.
+
+**Priority**: P1
+**Source**: Derived from FR-030-14
+**Dependencies**: None
+
+**Acceptance Criteria**:
+
+- **AC-030-16-1**: Given the term "JS", When `normalize_term()` is called, Then "javascript" is returned.
+- **AC-030-16-2**: Given the term "k8s", When `normalize_term()` is called, Then "kubernetes" is returned.
+- **AC-030-16-3**: Given an unknown term, When `normalize_term()` is called, Then the term is returned lowercased.
+
+---
+
+### FR-030-17: Keyword Match Boosting
+
+**Description**: The system shall boost TF-IDF scores with additive bonuses for matching required keywords (+0.03/match, max +0.15), preferred keywords (+0.02/match, max +0.05), and tech terms (+0.01/match, max +0.05). Final score is capped at 1.0.
+
+**Priority**: P1
+**Source**: Derived from FR-030-13
+**Dependencies**: FR-030-14 (JD analysis), FR-030-13 (TF-IDF base score)
+
+**Acceptance Criteria**:
+
+- **AC-030-17-1**: Given an entry matching 5 required keywords, When scored, Then the boost is +0.15 (5 × 0.03, capped).
+- **AC-030-17-2**: Given an entry matching 3 preferred keywords, When scored, Then the boost is +0.05 (3 × 0.02, capped at 0.05).
+- **AC-030-17-3**: Given boosts that would push the score above 1.0, When applied, Then the final score is capped at 1.0.
+
+---
+
+### FR-030-18: ONNX Embedding Score Blending
+
+**Description**: The system shall support optional ONNX embedding scores. When available, final score = 0.3 × TF-IDF + 0.7 × ONNX. When unavailable (no onnxruntime), the system falls back to TF-IDF only.
+
+**Priority**: P2 (interface only in M2, full implementation in M8)
+**Source**: US-102 from PRD
+**Dependencies**: FR-030-13 (TF-IDF scores)
+
+**Acceptance Criteria**:
+
+- **AC-030-18-1**: Given ONNX runtime is not installed, When scoring with method="auto", Then TF-IDF only is used and scoring_method="tfidf".
+- **AC-030-18-2**: Given ONNX scores are available, When blending, Then final = 0.3 × TF-IDF + 0.7 × ONNX.
+- **AC-030-18-3**: Given scoring_method="tfidf" in config, When scoring, Then ONNX is never called regardless of availability.
+
+**Negative Cases**:
+- **AC-030-18-N1**: Given entries without precomputed embeddings, When ONNX scoring is attempted, Then it returns None and TF-IDF fallback is used.
+
+---
+
+### FR-030-19: Tech Term Dictionary
+
+**Description**: The system shall maintain a built-in dictionary of 100+ recognized technology terms across categories (languages, frameworks, databases, cloud, data/ML) for extraction from job descriptions.
+
+**Priority**: P1
+**Source**: Derived from FR-030-14
+**Dependencies**: None
+
+**Acceptance Criteria**:
+
+- **AC-030-19-1**: Given a JD mentioning "PostgreSQL", When tech terms are extracted, Then "postgresql" appears in results.
+- **AC-030-19-2**: Given a JD mentioning "GitHub Actions", When tech terms are extracted (multi-word), Then "github actions" appears in results.
+- **AC-030-19-3**: Given the TECH_TERMS dictionary, Then it contains at least 100 entries.
+
+---
+
+### FR-030-20: LaTeX Special Character Escaping
+
+**Description**: The system shall escape LaTeX special characters (`& % $ # _ { } ~ ^`) in user-provided text before template rendering, converting them to their safe LaTeX equivalents (e.g., `&` → `\&`, `~` → `\textasciitilde{}`).
+
+**Priority**: P0 (M3 ship-blocking)
+**Source**: Derived from M3 LaTeX compilation requirement
+**Dependencies**: None
+
+**Acceptance Criteria**:
+
+- **AC-030-20-1**: Given text containing `&`, `%`, `$`, `#`, `_`, `{`, `}`, When `escape_latex()` is called, Then each character is replaced with its backslash-escaped form.
+- **AC-030-20-2**: Given text containing `~`, When `escape_latex()` is called, Then it is replaced with `\textasciitilde{}`.
+- **AC-030-20-3**: Given text containing `^`, When `escape_latex()` is called, Then it is replaced with `\textasciicircum{}`.
+- **AC-030-20-4**: Given text containing `\`, When `escape_latex()` is called, Then backslash is preserved (NOT escaped), because backslashes are used in LaTeX commands (e.g., `\textbf`, `\section`).
+
+**Negative Cases**:
+- **AC-030-20-N1**: Given `None` input, When `escape_latex()` is called, Then an empty string is returned.
+- **AC-030-20-N2**: Given an empty string, When `escape_latex()` is called, Then an empty string is returned.
+
+---
+
+### FR-030-21: pdflatex Binary Discovery
+
+**Description**: The system shall discover the `pdflatex` binary by searching in order: (1) bundled TinyTeX directory, (2) system PATH, (3) common installation locations per OS (e.g., `/usr/local/texlive`, `C:\texlive`, `/Library/TeX`).
+
+**Priority**: P0 (M3 ship-blocking)
+**Source**: Derived from M3 LaTeX compilation requirement
+**Dependencies**: None
+
+**Acceptance Criteria**:
+
+- **AC-030-21-1**: Given a bundled TinyTeX installation exists at the expected location, When `find_pdflatex()` is called, Then the bundled binary path is returned.
+- **AC-030-21-2**: Given no bundled TinyTeX but pdflatex is on system PATH, When `find_pdflatex()` is called, Then the PATH binary is returned via `shutil.which()`.
+- **AC-030-21-3**: Given pdflatex is not bundled or on PATH but exists in a common location, When `find_pdflatex()` is called, Then the common location binary is returned.
+
+**Negative Cases**:
+- **AC-030-21-N1**: Given pdflatex is not found in any location, When `find_pdflatex()` is called, Then `None` is returned.
+
+---
+
+### FR-030-22: Jinja2 LaTeX Template Rendering
+
+**Description**: The system shall render LaTeX templates using Jinja2 with custom delimiters (`\VAR{...}` for variables, `\BLOCK{...}` for blocks) to avoid conflicts with LaTeX's native brace syntax. Templates receive a context dict with resume sections, contact info, and formatting options.
+
+**Priority**: P0 (M3 ship-blocking)
+**Source**: Derived from M3 LaTeX compilation requirement
+**Dependencies**: FR-030-20 (escaping)
+
+**Acceptance Criteria**:
+
+- **AC-030-22-1**: Given a valid LaTeX template file and a context dict, When `render_latex_template()` is called, Then Jinja2 renders the template with custom delimiters and returns the rendered LaTeX string.
+- **AC-030-22-2**: Given a context dict with values containing LaTeX special characters, When rendered, Then all values are auto-escaped via the `escape_latex` filter.
+- **AC-030-22-3**: Given a template name that exists in the templates directory, When `render_latex_template()` is called with that name, Then the corresponding `.tex` template file is loaded.
+
+**Negative Cases**:
+- **AC-030-22-N1**: Given a template name that does not exist, When `render_latex_template()` is called, Then `FileNotFoundError` is raised.
+- **AC-030-22-N2**: Given a template with a Jinja2 syntax error, When rendered, Then the Jinja2 exception propagates with a descriptive message.
+
+---
+
+### FR-030-23: PDF Compilation via pdflatex
+
+**Description**: The system shall compile rendered LaTeX source into a PDF by invoking `pdflatex` as a subprocess with `-interaction=nonstopmode`, a configurable timeout (default 30s), and a temporary working directory. The compiled PDF is returned as a file path.
+
+**Priority**: P0 (M3 ship-blocking)
+**Source**: Derived from M3 LaTeX compilation requirement
+**Dependencies**: FR-030-21 (binary discovery), FR-030-22 (template rendering)
+
+**Acceptance Criteria**:
+
+- **AC-030-23-1**: Given valid LaTeX source and pdflatex is available, When `compile_pdf()` is called, Then pdflatex is invoked in a temp directory and the output PDF path is returned.
+- **AC-030-23-2**: Given pdflatex completes successfully, When the PDF is generated, Then the output file exists and is non-empty.
+- **AC-030-23-3**: Given a compilation that exceeds the timeout, When `compile_pdf()` is called, Then `subprocess.TimeoutExpired` is caught and a `RuntimeError` is raised with a descriptive message.
+
+**Negative Cases**:
+- **AC-030-23-N1**: Given pdflatex is not available (not found), When `compile_pdf()` is called, Then `RuntimeError` is raised indicating pdflatex is not installed.
+- **AC-030-23-N2**: Given LaTeX source with compilation errors, When pdflatex fails (non-zero exit), Then `RuntimeError` is raised including the pdflatex log output.
+
+---
+
+### FR-030-24: Built-in Resume Templates
+
+**Description**: The system shall provide four built-in LaTeX resume templates: `classic` (traditional single-column), `modern` (two-column with accent colors), `academic` (CV-style with publications section), and `minimal` (clean whitespace-focused). Each template accepts the same context dict interface.
+
+**Priority**: P1
+**Source**: US-106 from PRD
+**Dependencies**: FR-030-22 (template rendering)
+
+**Acceptance Criteria**:
+
+- **AC-030-24-1**: Given the templates directory, Then it contains `classic.tex`, `modern.tex`, `academic.tex`, and `minimal.tex` files.
+- **AC-030-24-2**: Given any of the four templates and a standard context dict, When rendered, Then valid LaTeX source is produced without Jinja2 errors.
+- **AC-030-24-3**: Given the LatexConfig model with `template="classic"`, When compilation is requested, Then the classic template is selected.
+- **AC-030-24-4**: Given a template name not in the four built-in templates, When compilation is requested, Then the system falls back to `classic`.
+
+---
+
+### FR-030-25: TinyTeX Bundling Script
+
+**Description**: The system shall provide a bundling script that downloads and packages TinyTeX (minimal TeX Live distribution) for Windows, macOS, and Linux, including only the LaTeX packages required for resume compilation (e.g., `geometry`, `hyperref`, `enumitem`, `fontenc`, `inputenc`).
+
+**Priority**: P2
+**Source**: Derived from distribution requirement
+**Dependencies**: FR-030-21 (binary discovery expects bundled TinyTeX)
+
+**Acceptance Criteria**:
+
+- **AC-030-25-1**: Given Windows as the target platform, When the bundling script is run, Then TinyTeX is downloaded and extracted to `electron/resources/tinytex/`.
+- **AC-030-25-2**: Given macOS or Linux as the target platform, When the bundling script is run, Then the platform-appropriate TinyTeX archive is downloaded and extracted.
+- **AC-030-25-3**: Given the bundled TinyTeX, Then it includes `pdflatex` binary and the required LaTeX packages.
+
+**Negative Cases**:
+- **AC-030-25-N1**: Given network is unavailable during bundling, When the script is run, Then a clear error message is displayed and the script exits with non-zero code.
+
+---
+
+### FR-030-26: compile_resume Convenience Function
+
+**Description**: The system shall provide a `compile_resume()` convenience function that combines template rendering (FR-030-22) and PDF compilation (FR-030-23) into a single call, accepting a template name, context dict, and optional output path.
+
+**Priority**: P0 (M3 ship-blocking)
+**Source**: Derived from M3 integration requirement
+**Dependencies**: FR-030-22, FR-030-23
+
+**Acceptance Criteria**:
+
+- **AC-030-26-1**: Given a template name and context dict, When `compile_resume()` is called, Then the template is rendered and compiled to PDF, returning the output PDF path.
+- **AC-030-26-2**: Given an explicit output_path parameter, When `compile_resume()` is called, Then the compiled PDF is copied to the specified output path.
+- **AC-030-26-3**: Given no output_path parameter, When `compile_resume()` is called, Then the PDF is written to a temporary directory and its path is returned.
+
+**Negative Cases**:
+- **AC-030-26-N1**: Given pdflatex is not available, When `compile_resume()` is called, Then `RuntimeError` is raised with install instructions.
+- **AC-030-26-N2**: Given template rendering fails, When `compile_resume()` is called, Then the error propagates without leaving orphaned temp files.
+
+---
+
+### FR-030-27: Resume Assembly from KB Entries
+
+**Description**: The system shall assemble a complete resume by selecting and organizing KB entries scored against a job description, requiring 0 LLM API calls. The assembler retrieves all active KB entries, scores them via `score_kb_entries()`, selects top entries per category respecting configurable minimums, and produces a structured resume context dict suitable for LaTeX template rendering via `compile_resume()`.
+
+**Priority**: P0 (M4 ship-blocking)
+**Source**: US-102, US-106 from PRD
+**Dependencies**: FR-030-04 (KB CRUD), FR-030-13 (TF-IDF scoring), FR-030-26 (compile_resume)
+
+**Acceptance Criteria**:
+
+- **AC-030-27-1**: Given a JD text and KB with sufficient entries, When `assemble_resume(jd_text, db, config)` is called, Then a resume context dict is returned with sections: summary, experience, skills, education, certifications, projects.
+- **AC-030-27-2**: Given assembled context, When the context is passed to `compile_resume()`, Then a valid PDF is produced without errors.
+- **AC-030-27-3**: Given the assembly process, Then 0 LLM API calls are made.
+- **AC-030-27-4**: Given a KB with entries across all categories, When assembled, Then entries are sorted by score descending within each section.
+- **AC-030-27-5**: Given the assembly result, Then it includes a `selected_entry_ids` list containing the IDs of all KB entries used.
+
+**Negative Cases**:
+- **AC-030-27-N1**: Given an empty KB (0 active entries), When `assemble_resume()` is called, Then `None` is returned indicating insufficient entries.
+- **AC-030-27-N2**: Given a KB with entries but none scoring above `min_score`, When assembled, Then `None` is returned indicating insufficient entries.
+
+---
+
+### FR-030-28: Entry Selection with Category Minimums
+
+**Description**: The system shall select KB entries for assembly using configurable per-category minimum counts. If the KB cannot satisfy the minimum for any required category (summary, experience, skills), assembly fails and returns `None` to trigger LLM fallback.
+
+**Priority**: P0 (M4 ship-blocking)
+**Source**: US-102 from PRD
+**Dependencies**: FR-030-27 (assembly)
+
+**Acceptance Criteria**:
+
+- **AC-030-28-1**: Given default category minimums `{summary: 1, experience: 3, skills: 1, education: 0, certifications: 0, projects: 0}`, When selecting entries, Then at least 1 summary, 3 experience, and 1 skills entry must be available above `min_score`.
+- **AC-030-28-2**: Given custom category minimums in ResumeReuseConfig, When selecting entries, Then the custom minimums are used instead of defaults.
+- **AC-030-28-3**: Given a category with more entries than the minimum, When selecting, Then the top N entries by score are selected (up to a configurable max per category, default 10).
+- **AC-030-28-4**: Given a category with entries between minimum and max, When selecting, Then all qualifying entries above `min_score` are included.
+
+**Negative Cases**:
+- **AC-030-28-N1**: Given a KB with only 2 experience entries above `min_score` and minimum is 3, When assembly is attempted, Then `None` is returned.
+- **AC-030-28-N2**: Given a KB with 0 summary entries, When assembly is attempted, Then `None` is returned.
+
+---
+
+### FR-030-29: Bot KB-First Flow with LLM Fallback
+
+**Description**: The system shall modify `bot.bot._generate_docs()` to attempt KB-based resume assembly first. If assembly succeeds, the assembled resume is compiled to PDF and used directly. If assembly returns `None` (insufficient entries), the system falls back to the existing LLM-based `generate_documents()` flow.
+
+**Priority**: P0 (M4 ship-blocking)
+**Source**: US-102 from PRD
+**Dependencies**: FR-030-27 (assembly), FR-030-30 (post-LLM ingestion)
+
+**Acceptance Criteria**:
+
+- **AC-030-29-1**: Given `resume_reuse.enabled=True` in config and KB assembly succeeds, When `_generate_docs()` is called, Then the KB-assembled resume is used and `invoke_llm()` is NOT called for resume generation.
+- **AC-030-29-2**: Given `resume_reuse.enabled=True` but KB assembly returns `None`, When `_generate_docs()` is called, Then the existing `generate_documents()` LLM flow is invoked as fallback.
+- **AC-030-29-3**: Given `resume_reuse.enabled=False` in config, When `_generate_docs()` is called, Then KB assembly is skipped entirely and LLM flow is used directly.
+- **AC-030-29-4**: Given KB assembly succeeds, When the resume is saved, Then `reuse_source="kb_assembly"` is stored in resume_versions.
+- **AC-030-29-5**: Given LLM fallback is used, When the resume is saved, Then `reuse_source="llm_generated"` is stored in resume_versions.
+
+**Negative Cases**:
+- **AC-030-29-N1**: Given KB assembly raises an unexpected exception, When `_generate_docs()` is called, Then the error is logged at ERROR level and LLM fallback is used (never crash the bot loop).
+
+---
+
+### FR-030-30: Post-LLM Ingestion
+
+**Description**: The system shall automatically parse LLM-generated markdown resumes into KB entries after each LLM fallback, so that future applications for similar roles can reuse those entries without additional LLM calls.
+
+**Priority**: P1
+**Source**: US-105 from PRD
+**Dependencies**: FR-030-06 (markdown parser), FR-030-07 (ingestion pipeline), FR-030-29 (LLM fallback)
+
+**Acceptance Criteria**:
+
+- **AC-030-30-1**: Given LLM fallback produces a markdown resume, When the resume is saved, Then `ingest_generated_resume()` is called to parse and insert entries into KB.
+- **AC-030-30-2**: Given duplicate entries already exist in KB from a previous ingestion, When `ingest_generated_resume()` is called, Then duplicates are silently skipped via dedup (INSERT OR IGNORE).
+- **AC-030-30-3**: Given post-LLM ingestion, Then the ingested entry count is logged at INFO level.
+
+**Negative Cases**:
+- **AC-030-30-N1**: Given `ingest_generated_resume()` raises an exception, When post-LLM ingestion fails, Then the error is logged at WARNING level and the bot continues (ingestion failure is non-blocking).
+
+---
+
+### FR-030-31: resume_versions reuse_source Column
+
+**Description**: The `resume_versions` table shall include a `reuse_source` column (TEXT, nullable, default NULL) indicating the origin of each resume version: `"kb_assembly"` for KB-assembled resumes or `"llm_generated"` for LLM-produced resumes. Existing rows without this field retain NULL.
+
+**Priority**: P1
+**Source**: Derived from FR-030-29 (tracking)
+**Dependencies**: FR-030-11 (schema migration)
+
+**Acceptance Criteria**:
+
+- **AC-030-31-1**: Given a KB-assembled resume is saved, When the resume_versions row is inserted, Then `reuse_source="kb_assembly"` is stored.
+- **AC-030-31-2**: Given an LLM-generated resume is saved, When the resume_versions row is inserted, Then `reuse_source="llm_generated"` is stored.
+- **AC-030-31-3**: Given an existing resume_versions row created before M4, Then `reuse_source` is NULL (backward compatible).
+- **AC-030-31-4**: Given the resume_versions API returns version data, Then `reuse_source` is included in the response dict.
+
+---
+
+### FR-030-32: resume_versions source_entry_ids Column
+
+**Description**: The `resume_versions` table shall include a `source_entry_ids` column (TEXT, nullable, default NULL) storing a JSON-serialized array of KB entry IDs used during assembly. This enables tracing which KB entries contributed to each resume version.
+
+**Priority**: P1
+**Source**: Derived from FR-030-27 (assembly tracking)
+**Dependencies**: FR-030-11 (schema migration), FR-030-27 (assembly)
+
+**Acceptance Criteria**:
+
+- **AC-030-32-1**: Given a KB-assembled resume using entry IDs [5, 12, 23, 41], When saved, Then `source_entry_ids='[5, 12, 23, 41]'` is stored as a JSON string.
+- **AC-030-32-2**: Given an LLM-generated resume (no KB entries), When saved, Then `source_entry_ids` is NULL.
+- **AC-030-32-3**: Given a resume_versions row with `source_entry_ids`, When the API returns version data, Then `source_entry_ids` is parsed from JSON and returned as a list.
+- **AC-030-32-4**: Given an existing resume_versions row created before M4, Then `source_entry_ids` is NULL (backward compatible).
+
+---
+
 ## 4. Non-Functional Requirements
 
 ### NFR-030-01: KB Assembly Latency (M1 Foundation)
@@ -380,21 +781,97 @@ This feature extends the existing AutoApply bot. Currently, every job applicatio
 **Priority**: P1
 **Validation Method**: Code review of all new modules
 
+### NFR-030-07: TF-IDF Scoring Latency
+
+**Description**: TF-IDF scoring of 200 KB entries against a single JD shall complete within 30ms.
+**Metric**: p95 latency < 30ms for 200 entries
+**Priority**: P1
+**Validation Method**: Unit test with 200 entries, measure wall-clock time
+
+### NFR-030-08: Scoring Module Test Coverage
+
+**Description**: All new M2 modules (resume_scorer, jd_analyzer) shall have unit test coverage of at least 90% of lines, covering happy paths, error paths, and edge cases.
+**Metric**: >= 90% line coverage per new module
+**Priority**: P0
+**Validation Method**: `pytest --cov` on new modules
+
+### NFR-030-09: No New Runtime Dependencies (M2)
+
+**Description**: The M2 scoring engine shall use only Python stdlib. ONNX is optional and not required at runtime.
+**Metric**: Zero new entries in pyproject.toml [dependencies] for M2
+**Priority**: P0
+**Validation Method**: Inspect pyproject.toml diff
+
+### NFR-030-10: Structured Logging (M2)
+
+**Description**: Both new M2 modules shall use `logging.getLogger(__name__)` and log scoring operations at INFO level and errors at ERROR level.
+**Metric**: Zero `print()` statements; all error paths logged
+**Priority**: P0
+**Validation Method**: Code review + grep for print() in new modules
+
+### NFR-030-11: Template Rendering Latency (M3)
+
+**Description**: Jinja2 LaTeX template rendering (excluding PDF compilation) shall complete within 50ms for any built-in template with a standard context dict.
+**Metric**: p95 latency < 50ms for template rendering
+**Priority**: P1
+**Validation Method**: Unit test measuring wall-clock time of `render_latex_template()` over 100 iterations
+
+### NFR-030-12: PDF Compilation Timeout (M3)
+
+**Description**: PDF compilation via pdflatex shall enforce a maximum timeout of 30 seconds (configurable via LatexConfig). If compilation exceeds the timeout, the subprocess is killed and a RuntimeError is raised.
+**Metric**: Compilation killed and error raised within 1s of timeout expiry
+**Priority**: P0
+**Validation Method**: Unit test with mock subprocess that simulates hang
+
+### NFR-030-13: LaTeX Escaping Robustness (M3)
+
+**Description**: The `escape_latex()` function shall handle `None`, empty strings, and non-string inputs gracefully, returning an empty string without raising exceptions.
+**Metric**: Zero exceptions for None, empty, int, float, or bool inputs
+**Priority**: P0
+**Validation Method**: Unit test with None, "", 0, 3.14, True inputs
+
+### NFR-030-14: KB Assembly Latency (M4)
+
+**Description**: KB-based resume assembly (entry retrieval, scoring, selection, and context dict construction) shall complete within 2 seconds, excluding pdflatex PDF compilation time.
+**Metric**: p95 latency < 2s for assembly of 500-entry KB against a single JD
+**Priority**: P1
+**Validation Method**: Unit test with 500 pre-inserted KB entries, measure wall-clock time of `assemble_resume()` excluding `compile_resume()`
+
+### NFR-030-15: Backward Compatibility (M4)
+
+**Description**: Existing callers of `_generate_docs()`, `save_resume_version()`, and resume_versions API endpoints shall continue to work without modification. Callers that do not supply `reuse_source` or `source_entry_ids` fields shall receive NULL defaults. Existing resume_versions rows without the new columns shall be returned with `reuse_source=None` and `source_entry_ids=None`.
+**Metric**: Zero breaking changes to existing bot loop, resume_versions API, or database queries
+**Priority**: P0
+**Validation Method**: Run existing test suite (`test_resume_versions.py`, `test_bot_loop.py`) with zero modifications — all must pass
+
 ---
 
 ## 5. Interface Requirements
 
-### 5.1 Internal Interfaces (M1 — no external/UI interfaces)
+### 5.1 Internal Interfaces (M1 — no external/UI interfaces, M2 — internal scoring APIs, M3 — LaTeX compilation APIs, M4 — assembly + bot integration APIs)
 
 | Module | Function | Direction | Consumers |
 |--------|----------|-----------|-----------|
 | core/document_parser | `extract_text(file_path)` | Called by KnowledgeBase | core/knowledge_base |
 | core/knowledge_base | `KnowledgeBase.process_upload()` | Called by routes (M5) | routes/knowledge_base (M5) |
-| core/knowledge_base | `KnowledgeBase.get_all_entries()` | Called by assembler (M4) | core/resume_assembler (M4) |
+| core/knowledge_base | `KnowledgeBase.get_all_entries()` | Called by assembler (M4) | core/resume_assembler |
+| core/knowledge_base | `KnowledgeBase.ingest_generated_resume()` | Called by bot (M4) | bot/bot.py |
 | core/resume_parser | `parse_resume_md(md_text)` | Called by KnowledgeBase | core/knowledge_base |
-| core/experience_calculator | `calculate_experience(db)` | Called by assembler (M4) | core/resume_assembler (M4) |
+| core/experience_calculator | `calculate_experience(db)` | Called by assembler (M4) | core/resume_assembler |
 | core/ai_engine | `invoke_llm(prompt, config)` | Called by KnowledgeBase | core/knowledge_base |
 | db/database | KB CRUD methods | Called by KnowledgeBase | core/knowledge_base |
+| core/resume_scorer | `score_kb_entries(jd_text, entries, config)` | Called by assembler (M4) | core/resume_assembler |
+| core/resume_scorer | `compute_tfidf_score(jd_text, entry_text)` | Utility | Any module |
+| core/jd_analyzer | `analyze_jd(text)` | Called by ResumeScorer | core/resume_scorer |
+| core/jd_analyzer | `normalize_term(term)` | Called by ResumeScorer | core/resume_scorer |
+| core/latex_compiler | `escape_latex(text)` | Utility | Any module needing LaTeX-safe text |
+| core/latex_compiler | `find_pdflatex()` | Called by compile_pdf | core/latex_compiler |
+| core/latex_compiler | `render_latex_template(template_name, context)` | Called by compile_resume | core/latex_compiler |
+| core/latex_compiler | `compile_pdf(latex_source, timeout)` | Called by compile_resume | core/latex_compiler |
+| core/latex_compiler | `compile_resume(template_name, context, output_path)` | Called by assembler (M4) | core/resume_assembler |
+| core/resume_assembler | `assemble_resume(jd_text, db, config)` | Called by bot (M4) | bot/bot.py |
+| bot/bot | `_generate_docs()` (modified) | Called by bot loop | bot/bot.py |
+| db/database | `save_resume_version(..., reuse_source, source_entry_ids)` | Called by bot (M4) | bot/bot.py |
 
 ---
 
@@ -420,10 +897,9 @@ Existing databases auto-migrated via `_migrate()` — adds new tables and column
 
 ## 7. Out of Scope
 
-- **TF-IDF scoring engine**: Deferred to M2 — requires JD analyzer dependency.
 - **LaTeX compilation**: Deferred to M3 — requires pdflatex/TinyTeX bundling.
-- **Bot integration**: Deferred to M4 — requires scoring + compilation from M2/M3.
-- **Frontend UI and API endpoints**: Deferred to M5 — M1 is backend foundation only.
+- **Bot integration and resume assembly**: Covered in M4.
+- **Frontend UI and API endpoints**: Deferred to M5 — M1-M4 are backend only.
 - **ATS scoring**: Deferred to M6.
 - **Manual resume builder**: Deferred to M7.
 - **ONNX embeddings**: M2 optional — embedding BLOB column reserved but unused in M1.
@@ -477,16 +953,582 @@ Existing databases auto-migrated via `_migrate()` — adds new tables and column
 | FR-030-10 | US-106 | Design: Config → Code: config/settings.py → Test: test_kb_config.py |
 | FR-030-11 | Derived | Design: Database → Code: db/database.py → Test: test_kb_database.py |
 | FR-030-12 | US-103, US-106 | Design: i18n → Code: static/locales/en.json, es.json → Test: manual |
+| FR-030-13 | US-102 | Design: ResumeScorer → Code: core/resume_scorer.py → Test: test_resume_scorer.py |
+| FR-030-14 | US-102 | Design: JDAnalyzer → Code: core/jd_analyzer.py → Test: test_resume_scorer.py |
+| FR-030-15 | Derived | Design: JDAnalyzer → Code: core/jd_analyzer.py → Test: test_resume_scorer.py |
+| FR-030-16 | Derived | Design: JDAnalyzer → Code: core/jd_analyzer.py → Test: test_resume_scorer.py |
+| FR-030-17 | Derived | Design: ResumeScorer → Code: core/resume_scorer.py → Test: test_resume_scorer.py |
+| FR-030-18 | US-102 | Design: ResumeScorer → Code: core/resume_scorer.py → Test: test_resume_scorer.py |
+| FR-030-19 | Derived | Design: JDAnalyzer → Code: core/jd_analyzer.py → Test: test_resume_scorer.py |
+| FR-030-20 | Derived | Design: LatexCompiler → Code: core/latex_compiler.py → Test: test_latex_compiler.py |
+| FR-030-21 | Derived | Design: LatexCompiler → Code: core/latex_compiler.py → Test: test_latex_compiler.py |
+| FR-030-22 | Derived | Design: LatexCompiler → Code: core/latex_compiler.py → Test: test_latex_compiler.py |
+| FR-030-23 | Derived | Design: LatexCompiler → Code: core/latex_compiler.py → Test: test_latex_compiler.py |
+| FR-030-24 | US-106 | Design: LatexCompiler → Code: core/latex_compiler.py, templates/*.tex → Test: test_latex_compiler.py |
+| FR-030-25 | Derived | Design: Distribution → Code: electron/scripts/bundle-tinytex.js → Test: manual |
+| FR-030-26 | Derived | Design: LatexCompiler → Code: core/latex_compiler.py → Test: test_latex_compiler.py |
+| FR-030-27 | US-102, US-106 | Design: ResumeAssembler → Code: core/resume_assembler.py → Test: test_resume_assembler.py |
+| FR-030-28 | US-102 | Design: ResumeAssembler → Code: core/resume_assembler.py → Test: test_resume_assembler.py |
+| FR-030-29 | US-102 | Design: BotIntegration → Code: bot/bot.py → Test: test_bot_loop.py |
+| FR-030-30 | US-105 | Design: BotIntegration → Code: bot/bot.py, core/knowledge_base.py → Test: test_bot_loop.py |
+| FR-030-31 | Derived | Design: Database → Code: db/database.py → Test: test_resume_versions.py |
+| FR-030-32 | Derived | Design: Database → Code: db/database.py → Test: test_resume_versions.py |
+| FR-030-33 | US-107 | Design: KBRoutes → Code: routes/knowledge_base.py → Test: test_knowledge_base_routes.py |
+| FR-030-34 | US-107 | Design: KBRoutes → Code: routes/knowledge_base.py → Test: test_knowledge_base_routes.py |
+| FR-030-35 | US-108 | Design: KBRoutes → Code: routes/knowledge_base.py → Test: test_knowledge_base_routes.py |
+| FR-030-36 | US-108 | Design: KBRoutes → Code: routes/knowledge_base.py → Test: test_knowledge_base_routes.py |
+| FR-030-37 | US-109 | Design: KBRoutes → Code: routes/knowledge_base.py → Test: test_knowledge_base_routes.py |
+| FR-030-38 | US-110 | Design: KBUI → Code: static/js/knowledge-base.js → Test: manual |
+| FR-030-39 | US-110 | Design: KBUI → Code: static/js/knowledge-base.js → Test: manual |
+| FR-030-40 | US-111 | Design: PreviewUI → Code: static/js/resume-preview.js → Test: manual |
+| FR-030-41 | US-111 | Design: PreviewUI → Code: routes/knowledge_base.py → Test: test_knowledge_base_routes.py |
+| FR-030-42 | US-112 | Design: Navigation → Code: templates/index.html, static/js/navigation.js → Test: manual |
+
+---
+
+## 9. Milestone 5 — Upload UI + KB Viewer + Preview
+
+### 9.1 User Stories
+
+| ID | Story | Priority |
+|----|-------|----------|
+| US-107 | As a user, I want to upload career documents (PDF/DOCX/TXT/MD) so that the system extracts KB entries automatically | Must |
+| US-108 | As a user, I want to browse, search, filter, edit, and delete my KB entries | Must |
+| US-109 | As a user, I want to see KB statistics (entry counts by category) | Should |
+| US-110 | As a user, I want a KB viewer UI with upload zone, stats cards, entries table, pagination | Must |
+| US-111 | As a user, I want to preview assembled resumes from my KB entries against a job description | Should |
+| US-112 | As a user, I want a Knowledge Base tab in the navigation bar | Must |
+
+### 9.2 Functional Requirements
+
+#### FR-030-33: Upload API Endpoint
+**Priority**: Must | **Source**: US-107
+
+The system SHALL provide `POST /api/kb/upload` accepting multipart file uploads.
+
+**Acceptance Criteria**:
+- AC-030-33-1: Given a valid PDF/DOCX/TXT/MD file under 10 MB, When uploaded, Then entries are extracted and count returned with HTTP 201
+- AC-030-33-2: Given no file in request, When POST /api/kb/upload called, Then HTTP 400 returned
+- AC-030-33-3: Given an unsupported file type (.exe), When uploaded, Then HTTP 400 returned
+- AC-030-33-4: Given a file exceeding 10 MB, When uploaded, Then HTTP 413 returned
+
+#### FR-030-34: KB Stats Endpoint
+**Priority**: Should | **Source**: US-109
+
+The system SHALL provide `GET /api/kb/stats` returning entry counts by category.
+
+**Acceptance Criteria**:
+- AC-030-34-1: Given an empty KB, When GET /api/kb/stats called, Then 200 returned with zero counts
+- AC-030-34-2: Given entries exist, When GET /api/kb/stats called, Then counts per category returned
+
+#### FR-030-35: KB List Entries Endpoint
+**Priority**: Must | **Source**: US-108
+
+The system SHALL provide `GET /api/kb` with optional category, search, limit, offset params.
+
+**Acceptance Criteria**:
+- AC-030-35-1: Given entries exist, When GET /api/kb called, Then entries array returned with count
+- AC-030-35-2: Given category=experience filter, When GET /api/kb?category=experience called, Then only experience entries returned
+- AC-030-35-3: Given limit=2, When GET /api/kb?limit=2 called, Then at most 2 entries returned
+
+#### FR-030-36: KB Entry CRUD Endpoints
+**Priority**: Must | **Source**: US-108
+
+The system SHALL provide GET/PUT/DELETE on `/api/kb/<id>`.
+
+**Acceptance Criteria**:
+- AC-030-36-1: Given an existing entry, When GET /api/kb/<id> called, Then entry details returned
+- AC-030-36-2: Given a non-existent entry, When GET /api/kb/<id> called, Then HTTP 404 returned
+- AC-030-36-3: Given valid JSON body, When PUT /api/kb/<id> called, Then entry updated and 200 returned
+- AC-030-36-4: Given no JSON body, When PUT /api/kb/<id> called, Then HTTP 400 returned
+- AC-030-36-5: Given an existing entry, When DELETE /api/kb/<id> called, Then soft-deleted and 200 returned
+
+#### FR-030-37: Documents List Endpoint
+**Priority**: Should | **Source**: US-109
+
+The system SHALL provide `GET /api/kb/documents` listing all uploaded documents.
+
+**Acceptance Criteria**:
+- AC-030-37-1: Given no documents uploaded, When GET /api/kb/documents called, Then empty list returned
+
+#### FR-030-38: KB Viewer Frontend Module
+**Priority**: Must | **Source**: US-110
+
+The system SHALL provide `static/js/knowledge-base.js` implementing KB viewer with stats, entries table, category filter, search, pagination, edit/delete overlays.
+
+**Acceptance Criteria**:
+- AC-030-38-1: Given KB entries exist, When KB screen loaded, Then stats cards and entries table rendered
+- AC-030-38-2: Given category filter selected, When changed, Then table filters to that category
+- AC-030-38-3: Given search text entered, When 300ms debounce elapsed, Then filtered results displayed
+- AC-030-38-4: Given edit button clicked, When overlay opens, Then entry fields pre-populated for editing
+
+#### FR-030-39: File Upload UI
+**Priority**: Must | **Source**: US-110
+
+The system SHALL provide file upload input in the KB screen with format validation and status feedback.
+
+**Acceptance Criteria**:
+- AC-030-39-1: Given a file selected, When upload button clicked, Then processing status shown and entries refreshed on success
+- AC-030-39-2: Given upload fails, When error returned, Then error message displayed
+
+#### FR-030-40: Resume Preview Frontend
+**Priority**: Should | **Source**: US-111
+
+The system SHALL provide `static/js/resume-preview.js` with template picker, JD textarea, and PDF iframe display.
+
+**Acceptance Criteria**:
+- AC-030-40-1: Given template and JD text provided, When preview clicked, Then PDF rendered in iframe
+- AC-030-40-2: Given no JD text, When preview clicked, Then error message shown
+- AC-030-40-3: Given preview overlay open, When Escape pressed, Then overlay closes
+
+#### FR-030-41: Resume Preview API
+**Priority**: Should | **Source**: US-111
+
+The system SHALL provide `POST /api/kb/preview` accepting template, entry_ids or jd_text, returning PDF.
+
+**Acceptance Criteria**:
+- AC-030-41-1: Given no request body, When POST /api/kb/preview called, Then HTTP 400 returned
+- AC-030-41-2: Given template only (no entry_ids or jd_text), When called, Then HTTP 400 returned
+
+#### FR-030-42: KB Navigation Tab
+**Priority**: Must | **Source**: US-112
+
+The system SHALL add a "Knowledge Base" tab to the navigation bar linking to the KB screen.
+
+**Acceptance Criteria**:
+- AC-030-42-1: Given the nav bar, When rendered, Then "Knowledge Base" tab visible between "Resume Library" and "Settings"
+- AC-030-42-2: Given KB tab clicked, When screen switches, Then loadKnowledgeBase() called
+
+### 9.3 Non-Functional Requirements
+
+#### NFR-030-16: i18n Coverage
+All user-facing strings in KB routes and frontend SHALL use `t()` or `data-i18n` attributes. All keys SHALL exist in en.json and es.json.
+
+#### NFR-030-17: Accessibility (WCAG 2.1 AA)
+All KB UI elements SHALL have ARIA labels, roles, aria-live regions, keyboard navigation, and semantic HTML.
+
+#### NFR-030-18: Input Validation
+File uploads SHALL validate extension (allowlist), filename (sanitize), and size (10 MB max). All route params SHALL be validated.
+
+---
+
+## 10. Functional Requirements — M6: ATS Scoring + Platform Profiles
+
+### 10.1 User Stories
+
+| ID | As a… | I want to… | So that… | Priority |
+|----|-------|-----------|----------|----------|
+| US-113 | Job seeker | See an ATS compatibility score for my KB entries against a JD | I know how well my resume matches before applying | Must |
+| US-114 | Job seeker | See which keywords and skills are missing from my resume | I can fill gaps before submitting | Must |
+| US-115 | Job seeker | Select an ATS platform profile (Workday, Greenhouse, etc.) | Scoring weights match the ATS I'm applying through | Should |
+| US-116 | Job seeker | View all available ATS profiles | I can pick the right one for each application | Should |
+
+### 10.2 Functional Requirements
+
+#### FR-030-43: ATS Composite Scoring Engine
+
+The system SHALL compute a composite ATS compatibility score (0–100) from 5 weighted components: keyword match (35%), section completeness (20%), skill match (20%), content length (15%), and format compliance (10%).
+
+**Acceptance Criteria**:
+- AC-030-43-1: Given a JD and KB entries, When `score_ats()` called, Then returns score 0–100 with 5 component breakdowns
+- AC-030-43-2: Given empty JD or entries, When scored, Then returns 0 with empty gap lists
+- AC-030-43-3: Given well-matched entries, When scored, Then composite score >= 50
+
+#### FR-030-44: Keyword and Skill Gap Analysis
+
+The system SHALL identify matched and missing keywords/skills between JD and resume content, returning them as sorted lists.
+
+**Acceptance Criteria**:
+- AC-030-44-1: Given JD keywords present in resume, When scored, Then matched_keywords contains them
+- AC-030-44-2: Given JD keywords absent from resume, When scored, Then missing_keywords contains them
+- AC-030-44-3: Given JD tech terms, When scored, Then matched_skills and missing_skills populated
+
+#### FR-030-45: ATS Platform Profiles
+
+The system SHALL define platform-specific scoring weight profiles for at least 6 ATS vendors (Greenhouse, Lever, Workday, Ashby, iCIMS, Taleo) plus a default profile.
+
+**Acceptance Criteria**:
+- AC-030-45-1: Given any profile, When weights retrieved, Then they sum to 1.0
+- AC-030-45-2: Given unknown platform name, When profile requested, Then default profile returned
+- AC-030-45-3: Given "workday", When weights compared to default, Then keyword_match weight is higher
+
+#### FR-030-46: ATS Score API Endpoint
+
+The system SHALL expose `POST /api/kb/ats-score` accepting `jd_text`, optional `platform`, and optional `entry_ids`, returning composite score + gap analysis.
+
+**Acceptance Criteria**:
+- AC-030-46-1: Given valid JD text and KB entries, When POST, Then 200 with score and gap data
+- AC-030-46-2: Given missing jd_text, When POST, Then 400 error
+- AC-030-46-3: Given empty KB, When POST, Then 400 error
+- AC-030-46-4: Given platform="workday", When POST, Then response includes platform="workday"
+
+#### FR-030-47: ATS Profiles List Endpoint
+
+The system SHALL expose `GET /api/kb/ats-profiles` returning all available ATS platform profiles.
+
+**Acceptance Criteria**:
+- AC-030-47-1: Given GET request, When called, Then 200 with profiles array containing >= 7 entries
+- AC-030-47-2: Given each profile, When listed, Then includes id, name, description fields
+
+#### FR-030-48: ATS Scoring UI
+
+The system SHALL provide a frontend ATS scoring card with platform selector, JD textarea, analyze button, and results display (score badge, component bars, gap badges).
+
+**Acceptance Criteria**:
+- AC-030-48-1: Given ATS card rendered, When user selects platform and enters JD, Then analyze button enabled
+- AC-030-48-2: Given analyze clicked, When score returned, Then score badge color-coded (green >= 70, yellow >= 40, red < 40)
+- AC-030-48-3: Given missing keywords/skills, When displayed, Then shown as badge elements
+
+### 10.3 Non-Functional Requirements
+
+#### NFR-030-19: ATS i18n Coverage
+All ATS UI strings SHALL use `data-i18n` attributes. All keys SHALL exist in en.json and es.json `ats` section.
+
+#### NFR-030-20: ATS Accessibility
+The ATS scoring card SHALL have ARIA labels, aria-live region for results, semantic HTML, and keyboard-accessible controls.
+
+### 10.4 Traceability Seeds
+
+| FR | → Design | → Source | → Test |
+|----|----------|----------|--------|
+| FR-030-43 | SAD §3.31 | `core/ats_scorer.py` | `test_ats_scorer.py::TestScoreATS` |
+| FR-030-44 | SAD §3.31 | `core/ats_scorer.py` | `test_ats_scorer.py::TestKeywordMatch, TestSkillMatch` |
+| FR-030-45 | SAD §3.32 | `core/ats_profiles.py` | `test_ats_scorer.py::TestATSProfiles` |
+| FR-030-46 | SAD §3.31, IC-028 | `routes/knowledge_base.py` | `test_ats_scorer.py::TestATSEndpoint` |
+| FR-030-47 | SAD §3.32, IC-029 | `routes/knowledge_base.py` | `test_ats_scorer.py::TestATSProfilesEndpoint` |
+| FR-030-48 | SAD §3.33 | `static/js/knowledge-base.js` | — |
+
+---
+
+## 11. Functional Requirements — M7: Manual Resume Builder
+
+### 11.1 User Stories
+
+| ID | As a… | I want to… | So that… | Priority |
+|----|-------|-----------|----------|----------|
+| US-117 | Job seeker | Drag and drop KB entries to build a custom resume | I have full control over which content appears | Must |
+| US-118 | Job seeker | Save resume entry combinations as named presets | I can quickly reuse configurations for similar roles | Must |
+| US-119 | Job seeker | See a one-page indicator while building | I know when my resume exceeds 1 page | Should |
+| US-120 | Job seeker | Auto-fill the builder from a job description | The system pre-selects the best entries for me to review | Should |
+
+### 11.2 Functional Requirements
+
+#### FR-030-49: Resume Presets CRUD
+
+The system SHALL support creating, listing, updating, and deleting named resume presets that store entry ID combinations and template choice.
+
+**Acceptance Criteria**:
+- AC-030-49-1: Given valid name and entry_ids, When POST /api/kb/presets, Then 201 with preset data
+- AC-030-49-2: Given missing name or entry_ids, When POST, Then 400 error
+- AC-030-49-3: Given existing presets, When GET /api/kb/presets, Then returns all presets
+- AC-030-49-4: Given valid preset ID, When PUT, Then preset updated
+- AC-030-49-5: Given valid preset ID, When DELETE, Then preset removed
+
+#### FR-030-50: Resume Presets Database Table
+
+The system SHALL store presets in a `resume_presets` table with id, name, entry_ids (JSON), template, created_at, updated_at columns.
+
+**Acceptance Criteria**:
+- AC-030-50-1: Given new DB, When schema initialized, Then resume_presets table exists
+- AC-030-50-2: Given preset saved, When retrieved, Then all fields populated correctly
+
+#### FR-030-51: Drag-and-Drop Resume Builder UI
+
+The system SHALL provide a full-screen overlay with a left panel (KB entries with search/filter) and right panel (resume sections with drop zones) supporting drag-and-drop entry selection.
+
+**Acceptance Criteria**:
+- AC-030-51-1: Given builder opened, When rendered, Then left panel shows KB entries grouped by category
+- AC-030-51-2: Given entry dragged to drop zone, When dropped, Then entry appears in that section
+- AC-030-51-3: Given entry in section, When remove clicked, Then entry returns to available pool
+
+#### FR-030-52: Entry Reorder in Builder
+
+The system SHALL allow reordering entries within a resume section using up/down controls.
+
+**Acceptance Criteria**:
+- AC-030-52-1: Given multiple entries in a section, When up arrow clicked, Then entry moves up
+- AC-030-52-2: Given entry at top, When up arrow clicked, Then button is disabled
+
+#### FR-030-53: One-Page Mode with Line Estimation
+
+The system SHALL estimate page count based on entry word counts and display a live page indicator. In one-page mode, it SHALL warn when content exceeds estimated 1-page limit.
+
+**Acceptance Criteria**:
+- AC-030-53-1: Given entries selected, When page indicator updates, Then shows estimated page count
+- AC-030-53-2: Given one-page mode enabled and >55 estimated lines, Then warning displayed
+
+#### FR-030-54: Auto-Fill from Job Description
+
+The system SHALL allow pasting a JD to auto-select the best-matching KB entries using ATS keyword scoring, with per-category limits.
+
+**Acceptance Criteria**:
+- AC-030-54-1: Given JD text entered, When auto-fill clicked, Then entries selected based on keyword match
+- AC-030-54-2: Given auto-fill, When complete, Then per-category limits respected (e.g., max 5 experience)
+
+### 11.3 Non-Functional Requirements
+
+#### NFR-030-21: Builder i18n Coverage
+All builder UI strings SHALL use `data-i18n` attributes. All keys SHALL exist in en.json and es.json `builder` section.
+
+#### NFR-030-22: Builder Accessibility
+The builder SHALL have ARIA labels on all panels, drop zones, buttons, and live regions. Keyboard navigation SHALL work for add/remove/reorder operations.
+
+### 11.4 Traceability Seeds
+
+| FR | → Design | → Source | → Test |
+|----|----------|----------|--------|
+| FR-030-49 | SAD §3.35, IC-030/031/032 | `routes/knowledge_base.py`, `db/database.py` | `test_resume_builder.py::TestPresetsAPI` |
+| FR-030-50 | SAD §3.35 | `db/database.py` | `test_resume_builder.py::TestPresetDB` |
+| FR-030-51 | SAD §3.36 | `static/js/resume-builder.js` | — |
+| FR-030-52 | SAD §3.36 | `static/js/resume-builder.js` | — |
+| FR-030-53 | SAD §3.36 | `static/js/resume-builder.js` | — |
+| FR-030-54 | SAD §3.36 | `static/js/resume-builder.js` | — |
+
+---
+
+## 12. Milestone 8 — Performance (PDF Cache, JD Classifier, Async Upload)
+
+### 12.1 Scope
+Performance optimizations: PDF compilation cache to avoid recompiling identical LaTeX, JD classifier for pre-filtering KB entries, async document upload with background processing and status polling.
+
+### 12.2 Functional Requirements
+
+#### FR-030-55: PDF Compilation Cache
+The system SHALL cache compiled PDF bytes keyed by a SHA256[:16] hash of LaTeX content, returning cached PDFs on cache hit.
+
+**Acceptance Criteria**:
+- AC-030-55-1: Given identical LaTeX content, When compile_latex called twice, Then second call returns cached bytes without invoking pdflatex
+- AC-030-55-2: Given cache disabled (use_cache=False), When compile_latex called, Then cache is bypassed entirely
+
+#### FR-030-56: PDF Cache LRU Eviction
+The system SHALL evict oldest cached PDFs when cache exceeds MAX_CACHE_SIZE (200), based on file modification time.
+
+**Acceptance Criteria**:
+- AC-030-56-1: Given 205 cached PDFs, When evict_lru called, Then 5 oldest are removed
+- AC-030-56-2: Given fewer than MAX_CACHE_SIZE PDFs, When evict_lru called, Then 0 files removed
+
+#### FR-030-57: PDF Cache Management
+The system SHALL provide clear_cache() and cache_stats() functions for cache administration.
+
+**Acceptance Criteria**:
+- AC-030-57-1: Given 3 cached PDFs, When clear_cache called, Then all 3 removed, returns count 3
+- AC-030-57-2: Given cached PDFs, When cache_stats called, Then returns count, size_bytes, size_mb, max_size, cache_dir
+
+#### FR-030-58: JD Classification
+The system SHALL classify job descriptions into job types (backend, frontend, fullstack, data_engineer, data_scientist, ml_engineer, devops, mobile, security) using keyword matching, sorted by match count descending.
+
+**Acceptance Criteria**:
+- AC-030-58-1: Given JD with "Python, Django, REST API, PostgreSQL", When classify_jd called, Then "backend" is in result
+- AC-030-58-2: Given JD with no matching keywords, When classify_jd called, Then returns ["general"]
+- AC-030-58-3: Given empty JD text, When classify_jd called, Then returns ["general"]
+
+#### FR-030-59: JD Type Expansion
+The system SHALL expand primary job types to include related types (e.g., backend → fullstack, devops) without duplicates.
+
+**Acceptance Criteria**:
+- AC-030-59-1: Given primary type ["backend"], When get_relevant_types called, Then result includes "fullstack" and "devops"
+- AC-030-59-2: Given overlapping types, When expanded, Then no duplicates in result
+
+#### FR-030-60: KB Entry Pre-Filtering by Job Type
+The system SHALL filter KB entries by job type match, with fallback to all entries when fewer than min_entries match.
+
+**Acceptance Criteria**:
+- AC-030-60-1: Given entries with job_types, When filtered by ["backend"], Then only matching + universal entries returned
+- AC-030-60-2: Given fewer than min_entries matching, When filtered, Then all entries returned as fallback
+
+#### FR-030-61: Async Document Upload
+The system SHALL accept document uploads via POST /api/kb/upload/async, return a task_id immediately (202), and process in a background thread.
+
+**Acceptance Criteria**:
+- AC-030-61-1: Given valid file upload, When POST /api/kb/upload/async, Then returns 202 with task_id and status "processing"
+- AC-030-61-2: Given no file in request, When POST /api/kb/upload/async, Then returns 400
+
+#### FR-030-62: Upload Status Polling
+The system SHALL provide GET /api/kb/upload/status/<task_id> to poll async upload task status, returning current status, entries_created, and error if any.
+
+**Acceptance Criteria**:
+- AC-030-62-1: Given valid task_id with completed task, When GET /api/kb/upload/status/<id>, Then returns status "completed" with entries_created
+- AC-030-62-2: Given unknown task_id, When GET /api/kb/upload/status/<id>, Then returns 404
+
+### 12.3 Non-Functional Requirements
+
+#### NFR-030-23: Cache Performance
+Cache lookup SHALL complete in < 5ms for hits. Cache directory SHALL be created lazily on first use.
+
+#### NFR-030-24: Thread Safety
+Async upload task tracking SHALL use threading.Lock for concurrent access to the shared task dict.
+
+### 12.4 Traceability Seeds
+
+| FR | → Design | → Source | → Test |
+|----|----------|----------|--------|
+| FR-030-55 | SAD §3.38 | `core/pdf_cache.py`, `core/latex_compiler.py` | `test_performance.py::TestPDFCache`, `TestLatexCompilerCache` |
+| FR-030-56 | SAD §3.38 | `core/pdf_cache.py` | `test_performance.py::TestPDFCache::test_evict_lru_*` |
+| FR-030-57 | SAD §3.38 | `core/pdf_cache.py` | `test_performance.py::TestPDFCache::test_clear_cache`, `test_cache_stats` |
+| FR-030-58 | SAD §3.39 | `core/jd_classifier.py` | `test_performance.py::TestJDClassifier::test_classify_*` |
+| FR-030-59 | SAD §3.39 | `core/jd_classifier.py` | `test_performance.py::TestJDClassifier::test_get_relevant_*` |
+| FR-030-60 | SAD §3.39 | `core/jd_classifier.py` | `test_performance.py::TestJDClassifier::test_filter_*` |
+| FR-030-61 | SAD §3.40, IC-033 | `routes/knowledge_base.py` | `test_performance.py::TestAsyncUpload::test_async_upload_*` |
+| FR-030-62 | SAD §3.40, IC-034 | `routes/knowledge_base.py` | `test_performance.py::TestAsyncUpload::test_upload_status_*` |
+
+---
+
+## 13. Milestone 9 — Intelligence (Outcome Learning, CL Assembly, Reuse Stats)
+
+### 13.1 Scope
+User intelligence features: outcome-based learning (effectiveness_score from interview feedback), cover letter KB assembly (0 API calls), reuse stats analytics, and JD classifier integration into the resume assembler pipeline.
+
+### 13.2 Functional Requirements
+
+#### FR-030-63: KB Usage Logging
+The system SHALL log each KB entry's usage when selected for a resume assembly, tracking entry_id, application_id, and TF-IDF score. Usage count and last_used_at SHALL be updated on the knowledge_base table.
+
+**Acceptance Criteria**:
+- AC-030-63-1: Given a resume assembled from 5 KB entries, When log_kb_usage called, Then 5 rows inserted into kb_usage_log and usage_count incremented on each entry
+
+#### FR-030-64: Outcome Feedback
+The system SHALL accept outcome feedback (interview/rejected/no_response) for an application and update all associated kb_usage_log rows. For "interview" outcomes, effectiveness_score SHALL be recalculated as interviews/total_uses.
+
+**Acceptance Criteria**:
+- AC-030-64-1: Given application with 3 KB entries, When outcome "interview" submitted, Then all 3 log rows updated and effectiveness_score = 1.0
+- AC-030-64-2: Given entry used twice (1 interview, 1 rejection), When both outcomes recorded, Then effectiveness_score = 0.5
+
+#### FR-030-65: Effectiveness Ranking
+The system SHALL provide GET /api/kb/effectiveness returning KB entries ranked by effectiveness_score descending, limited to entries with usage_count > 0.
+
+**Acceptance Criteria**:
+- AC-030-65-1: Given entries with varying effectiveness, When GET /api/kb/effectiveness, Then returns entries sorted by score DESC
+
+#### FR-030-66: Feedback API Endpoint
+The system SHALL provide POST /api/kb/feedback accepting {application_id, outcome} and updating outcomes via update_kb_outcome().
+
+**Acceptance Criteria**:
+- AC-030-66-1: Given valid application_id and outcome "interview", When POST /api/kb/feedback, Then returns success with updated count
+- AC-030-66-2: Given invalid outcome value, When POST /api/kb/feedback, Then returns 400
+
+#### FR-030-67: Cover Letter KB Assembly
+The system SHALL assemble cover letters from KB entries scored against a JD using template-based generation, requiring no LLM API calls. Requires at least 2 experience entries above threshold.
+
+**Acceptance Criteria**:
+- AC-030-67-1: Given sufficient KB entries, When assemble_cover_letter called, Then returns formatted cover letter with greeting, intro, body, closing
+- AC-030-67-2: Given empty KB, When assemble_cover_letter called, Then returns None
+
+#### FR-030-68: Reuse Stats Analytics
+The system SHALL provide GET /api/analytics/reuse-stats returning aggregate KB assembly metrics: total_assemblies, total_entries_used, unique_entries_used, interviews_from_kb, avg_effectiveness, top_categories.
+
+**Acceptance Criteria**:
+- AC-030-68-1: Given usage log data, When GET /api/analytics/reuse-stats, Then returns all 6 metrics accurately
+
+#### FR-030-69: JD Classifier Integration
+The resume assembler SHALL pre-filter KB entries using the JD classifier before TF-IDF scoring, narrowing entries to those matching the detected job type(s) plus related types.
+
+**Acceptance Criteria**:
+- AC-030-69-1: Given a backend-focused JD, When assemble_resume called, Then classify_jd is called to pre-filter entries
+
+#### FR-030-70: Effectiveness Weighting in Scoring
+The TF-IDF scorer SHALL blend effectiveness_score into final entry scores using weighted formula: (tfidf × 0.7) + (effectiveness × 0.3), only when effectiveness > 0.
+
+**Acceptance Criteria**:
+- AC-030-70-1: Given entry with effectiveness_score=0.9, When scored, Then final score is boosted
+- AC-030-70-2: Given entry without effectiveness_score, When scored, Then original TF-IDF score used
+
+### 13.3 Non-Functional Requirements
+
+#### NFR-030-25: Migration Safety
+Schema migration for effectiveness columns SHALL use PRAGMA table_info check before ALTER TABLE to handle existing databases safely.
+
+#### NFR-030-26: SQL Parameterization
+All new database queries SHALL use parameterized SQL (? placeholders). No string interpolation in SQL.
+
+### 13.4 Traceability Seeds
+
+| FR | → Design | → Source | → Test |
+|----|----------|----------|--------|
+| FR-030-63 | SAD §3.42 | `db/database.py` | `test_intelligence.py::TestKBUsageLog::test_log_*` |
+| FR-030-64 | SAD §3.42 | `db/database.py` | `test_intelligence.py::TestKBUsageLog::test_update_outcome_*` |
+| FR-030-65 | SAD §3.42, IC-036 | `db/database.py`, `routes/knowledge_base.py` | `test_intelligence.py::TestEffectivenessAPI` |
+| FR-030-66 | SAD §3.42, IC-035 | `routes/knowledge_base.py` | `test_intelligence.py::TestFeedbackAPI` |
+| FR-030-67 | SAD §3.43 | `core/cover_letter_assembler.py` | `test_intelligence.py::TestCoverLetterAssembly` |
+| FR-030-68 | SAD §3.44, IC-037 | `db/database.py`, `routes/analytics.py` | `test_intelligence.py::TestReuseStatsAPI` |
+| FR-030-69 | SAD §3.44 | `core/resume_assembler.py` | `test_intelligence.py::TestAssemblerJDPreFilter` |
+| FR-030-70 | SAD §3.44 | `core/resume_scorer.py` | `test_intelligence.py::TestEffectivenessWeighting` |
+
+---
+
+## 14. Milestone 10 — Migration + Polish
+
+### 14.1 Functional Requirements
+
+#### FR-030-71: Migration Marker File
+The system SHALL track KB migration state via a `.kb_migrated` marker file in the data directory.
+- **AC-071-1 (positive)**: `needs_migration()` returns True when marker file does not exist.
+- **AC-071-2 (positive)**: `needs_migration()` returns False after `mark_migrated()` is called.
+- **AC-071-3 (positive)**: `mark_migrated()` creates `.kb_migrated` file in data directory.
+
+#### FR-030-72: Experience File Migration
+The system SHALL auto-migrate `.txt` experience files into KB entries.
+- **AC-072-1 (positive)**: Lines starting with `-` or `*` are parsed as individual entries.
+- **AC-072-2 (positive)**: Lines shorter than 5 characters are skipped.
+- **AC-072-3 (positive)**: `README.txt` files are skipped.
+- **AC-072-4 (positive)**: Returns 0 when directory does not exist or is empty.
+- **AC-072-5 (positive)**: Multiple files processed with correct cumulative count.
+
+#### FR-030-73: Resume File Migration
+The system SHALL auto-migrate `.md` resume files into KB entries using `parse_resume_md`.
+- **AC-073-1 (positive)**: Markdown resumes parsed into categorized KB entries.
+- **AC-073-2 (positive)**: All migrated entries tagged with `"migrated"`.
+- **AC-073-3 (positive)**: Returns 0 when directory does not exist or is empty.
+
+#### FR-030-74: Full Migration Pipeline
+`run_migration()` SHALL orchestrate txt + md migration and mark completion.
+- **AC-074-1 (positive)**: Skips migration if already migrated (returns `{migrated: false, skipped_reason: "already_migrated"}`).
+- **AC-074-2 (positive)**: Processes both experience and resume directories.
+- **AC-074-3 (positive)**: Creates marker even when no files found.
+- **AC-074-4 (positive)**: Returns counts of txt and md entries.
+
+#### FR-030-75: Category Guessing
+`_guess_category()` SHALL classify text into experience/skill/education/certification using keyword heuristics.
+- **AC-075-1 (positive)**: Certification keywords detected (certified, certification, license).
+- **AC-075-2 (positive)**: Education keywords detected (bachelor, master, degree, university).
+- **AC-075-3 (positive)**: Skill keywords detected (proficient, python, frameworks).
+- **AC-075-4 (positive)**: Defaults to "experience" when no keywords match.
+
+#### FR-030-76: LaTeX Backslash Escaping
+`escape_latex()` SHALL handle backslash characters without double-escaping braces.
+- **AC-076-1 (positive)**: Backslash converted to `\textbackslash{}`.
+- **AC-076-2 (positive)**: All 9 special characters (`& % $ # _ { } ~ ^`) properly escaped.
+- **AC-076-3 (positive)**: Empty string returns empty string.
+- **AC-076-4 (positive)**: Mixed backslash and special chars produce correct output.
+- **AC-076-5 (negative)**: Single backslash does not produce doubled `\textbackslash{}`.
+
+### 14.2 Non-Functional Requirements
+
+#### NFR-030-27: Structured Logging (M10)
+All M10 modules SHALL use `logging.getLogger(__name__)` with `%s` formatting. No silent exception swallowing.
+
+#### NFR-030-28: Test Coverage (M10)
+M10 SHALL include ≥25 unit tests covering all new functions, error paths, and edge cases.
+
+### 14.3 Traceability Seeds
+
+| FR | → Design | → Source | → Test |
+|----|----------|----------|--------|
+| FR-030-71 | SAD §3.46 | `core/kb_migrator.py` | `test_migration.py::TestMigrationMarker` |
+| FR-030-72 | SAD §3.46 | `core/kb_migrator.py` | `test_migration.py::TestMigrateExperienceFiles` |
+| FR-030-73 | SAD §3.46 | `core/kb_migrator.py` | `test_migration.py::TestMigrateResumeFiles` |
+| FR-030-74 | SAD §3.46 | `core/kb_migrator.py` | `test_migration.py::TestRunMigration` |
+| FR-030-75 | SAD §3.46 | `core/kb_migrator.py` | `test_migration.py::TestCategoryGuessing` |
+| FR-030-76 | SAD §3.47 | `core/latex_compiler.py` | `test_migration.py::TestLatexEscapingHardening` |
 
 ---
 
 ## Software Requirements Specification -- GATE 3 OUTPUT
 
 **Document**: SRS-TASK-030-smart-resume-reuse
-**FRs**: 12 functional requirements
-**NFRs**: 6 non-functional requirements
-**ACs**: 42 total acceptance criteria (31 positive + 11 negative)
-**Quality Checklist**: 20/20 items passed (100%)
+**FRs**: 76 functional requirements (12 M1 + 7 M2 + 7 M3 + 6 M4 + 10 M5 + 6 M6 + 6 M7 + 8 M8 + 8 M9 + 6 M10)
+**NFRs**: 28 non-functional requirements (6 M1 + 4 M2 + 3 M3 + 2 M4 + 3 M5 + 2 M6 + 2 M7 + 2 M8 + 2 M9 + 2 M10)
+**ACs**: 241 total acceptance criteria (207 positive + 34 negative)
+**Quality Checklist**: 48/48 items passed (100%)
 
 ### Handoff Routing
 | Recipient | What They Receive |
