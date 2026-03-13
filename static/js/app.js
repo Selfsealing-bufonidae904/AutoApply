@@ -16,8 +16,9 @@ import { botControl } from './bot-control.js';
 import { clearFeed } from './feed.js';
 import { debounceSearch, loadApplications, goAppPage, updateAppStatus, updateAppNotes, viewCoverLetter, viewApplicationDetail, updateDetailStatus, saveDetailNotes, exportCSV } from './applications.js';
 import { loadProfileFiles, showFileModal, editFile, saveFile, confirmDeleteFile } from './profile.js';
-import { loadSettings, saveSettings, updateScheduleUI, changeApplyMode, onLLMProviderChange, validateLLMKey, onLocaleChange } from './settings.js';
+import { loadSettings, saveSettings, updateScheduleUI, changeApplyMode, initBotToggles, uploadDefaultResume, removeDefaultResume, loadDefaultResume, onLLMProviderChange, validateLLMKey, onLocaleChange } from './settings.js';
 import { reviewApprove, reviewEdit, reviewManualSubmit, reviewSkip } from './review.js';
+import { loginGateDone, loginGateSkip } from './login-gate.js';
 import { openLoginBrowser, closeLoginBrowser } from './login.js';
 import { closeModal } from './modals.js';
 import { updateAIIndicators } from './ai-status.js';
@@ -59,6 +60,8 @@ window.confirmDeleteFile = confirmDeleteFile;
 window.saveSettings = saveSettings;
 window.updateScheduleUI = updateScheduleUI;
 window.changeApplyMode = changeApplyMode;
+window.uploadDefaultResume = uploadDefaultResume;
+window.removeDefaultResume = removeDefaultResume;
 window.onLLMProviderChange = onLLMProviderChange;
 window.validateLLMKey = validateLLMKey;
 window.onLocaleChange = onLocaleChange;
@@ -66,6 +69,8 @@ window.reviewApprove = reviewApprove;
 window.reviewEdit = reviewEdit;
 window.reviewManualSubmit = reviewManualSubmit;
 window.reviewSkip = reviewSkip;
+window.loginGateDone = loginGateDone;
+window.loginGateSkip = loginGateSkip;
 window.closeModal = closeModal;
 window.switchAnalyticsPeriod = switchAnalyticsPeriod;
 window.viewResume = viewResume;
@@ -184,6 +189,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initKnowledgeBase();
   initResumePreview();
   initResumeBuilder();
+  initBotToggles();
 
   try {
     const res = await fetch('/api/setup/status');

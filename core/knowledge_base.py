@@ -31,7 +31,11 @@ You are an expert career consultant. Parse this document into structured resume 
 For EACH item you extract, output it as a JSON object with these fields:
 - "category": one of "experience", "skill", "education", "project", "summary", "certification", "award", "volunteer"
 - "text": the polished, professional bullet point or entry. Use strong action verbs, quantify with metrics where present. Keep concise (1-2 lines max).
-- "subsection": the role/company/institution context (e.g., "Senior Engineer — Acme Corp (2020-2023)"). Null for skills/certs.
+- "job_title": the role/degree title (e.g., "Software Engineer", "Master of Science in ECE"). Null for skills/certs/summary.
+- "company": the company or institution name (e.g., "Robert Bosch LLC", "University of Washington"). Null for skills/certs/summary.
+- "start_date": start date if applicable (e.g., "September 2022", "2020", "Jan 2019"). Null if not time-bound.
+- "end_date": end date if applicable (e.g., "June 2024", "Present", "2023"). Null if not time-bound.
+- "location": city/state/country if mentioned (e.g., "Seattle, WA", "Remote"). Null if not specified.
 - "job_types": array of job categories this entry is relevant to. Choose from: ["backend", "frontend", "fullstack", "data_engineer", "data_scientist", "devops", "cloud", "ml_engineer", "mobile", "security", "management", "product", "qa", "embedded", "general"]
 
 Rules:
@@ -39,8 +43,9 @@ Rules:
 - Make bullet points professional and ATS-optimized: "Verb + What + Metric + Context"
 - Do NOT invent metrics or facts not present in the source
 - DO improve grammar, tense consistency, and professional tone
-- Group related skills (e.g., "Python, Flask, Django" as one skill entry for "backend")
-- For experience bullets, preserve the original company/role as subsection context
+- Extract EACH skill as its OWN separate entry (e.g., "Python" is one entry, "Flask" is another, "Django" is another). Do NOT group multiple skills into a single entry.
+- For experience/education entries, ALWAYS provide "job_title" and "company" as separate fields
+- NEVER embed dates, location, company, or job title in the "text" field
 - Create 2-3 summary sentences that capture the person's overall profile, tagged by job type
 
 Output ONLY a JSON array of objects. No preamble, no explanation.
@@ -156,7 +161,11 @@ class KnowledgeBase:
             valid.append({
                 "category": category,
                 "text": text,
-                "subsection": entry.get("subsection"),
+                "job_title": entry.get("job_title"),
+                "company": entry.get("company"),
+                "start_date": entry.get("start_date"),
+                "end_date": entry.get("end_date"),
+                "location": entry.get("location"),
                 "job_types": json.dumps(entry.get("job_types", ["general"])),
             })
 
@@ -166,10 +175,30 @@ class KnowledgeBase:
         """Insert entries into KB with dedup. Returns count of new entries."""
         inserted = 0
         for entry in entries:
+            # Create/find role for entries with job_title + company
+            role_id = None
+            job_title = entry.get("job_title")
+            company = entry.get("company")
+            if job_title and company:
+                role_id = self.db.save_role(
+                    title=job_title.strip(),
+                    company=company.strip(),
+                    start_date=entry.get("start_date"),
+                    end_date=entry.get("end_date"),
+                    location=entry.get("location"),
+                    source_doc_id=doc_id,
+                )
+
+            # Build subsection fallback for entries without a role
+            subsection = entry.get("subsection")
+            if not role_id and not subsection and job_title:
+                subsection = f"{job_title} — {company}" if company else job_title
+
             result = self.db.save_kb_entry(
                 category=entry["category"],
                 text=entry["text"],
-                subsection=entry.get("subsection"),
+                subsection=subsection,
+                role_id=role_id,
                 job_types=entry.get("job_types"),
                 tags=entry.get("tags"),
                 source_doc_id=doc_id,
@@ -198,6 +227,7 @@ class KnowledgeBase:
                 category=category,
                 text=text,
                 subsection=entry.get("subsection"),
+                role_id=entry.get("role_id"),
                 job_types=entry.get("job_types"),
                 tags=entry.get("tags"),
                 source_doc_id=doc_id,

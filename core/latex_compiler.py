@@ -65,10 +65,12 @@ _COMMON_PATHS: list[str] = [
     "resources/tinytex/bin/x86_64-linux/pdflatex",
     "resources/tinytex/bin/universal-darwin/pdflatex",
     "resources/tinytex/bin/windows/pdflatex.exe",
-    # User-installed TinyTeX
+    # User-installed TinyTeX (~/.TinyTeX)
     str(Path.home() / ".TinyTeX" / "bin" / "x86_64-linux" / "pdflatex"),
     str(Path.home() / ".TinyTeX" / "bin" / "universal-darwin" / "pdflatex"),
     str(Path.home() / ".TinyTeX" / "bin" / "windows" / "pdflatex.exe"),
+    # TinyTeX via APPDATA (Windows standard install)
+    str(Path(os.environ.get("APPDATA", "")) / "TinyTeX" / "bin" / "windows" / "pdflatex.exe"),
     # TeX Live
     "/usr/local/texlive/2024/bin/x86_64-linux/pdflatex",
     "/usr/local/texlive/2024/bin/universal-darwin/pdflatex",
@@ -146,16 +148,13 @@ def render_template(
         template_name: Template name (e.g., "classic"). Looks for
             templates/latex/{name}.tex.j2
         context: Dict with keys expected by the template:
-            - name: str
-            - email: str
-            - phone: str
-            - location: str (optional)
+            - name, email, phone, location, linkedin_url: str
             - summary: str (optional)
-            - experience: list[dict] with text, subsection
-            - education: list[dict] with text, subsection
-            - skills: list[dict] with text
-            - projects: list[dict] with text, subsection (optional)
-            - certifications: list[dict] with text (optional)
+            - experience: [{company, location, roles: [{title, dates, bullets: [str]}]}]
+            - education: [{institution, location, degree, dates}]
+            - skills: [{category, entries}]
+            - projects: [{name, bullets: [str]}]
+            - certifications: [{text}]
 
     Returns:
         Rendered .tex content as string.
@@ -175,31 +174,25 @@ def render_template(
     template = env.get_template(f"{template_name}.tex.j2")
 
     # Escape all text values in context
-    safe_context = _escape_context(context)
+    safe_context = _escape_context_dict(context)
 
     return template.render(**safe_context)
 
 
-def _escape_context(context: dict) -> dict:
-    """Deep-escape all string values in the template context."""
-    result: dict = {}
-    for key, value in context.items():
-        if isinstance(value, str):
-            result[key] = escape_latex(value)
-        elif isinstance(value, list):
-            result[key] = [_escape_entry(item) for item in value]
-        else:
-            result[key] = value
-    return result
+def _escape_context_dict(context: dict) -> dict:
+    """Escape all string values in a top-level template context dict."""
+    return {k: _escape_value(v) for k, v in context.items()}
 
 
-def _escape_entry(entry: dict | str | object) -> dict | str:
-    """Escape string values in a list entry."""
-    if isinstance(entry, dict):
-        return {k: escape_latex(v) if isinstance(v, str) else v for k, v in entry.items()}
-    if isinstance(entry, str):
-        return escape_latex(entry)
-    return str(entry)
+def _escape_value(value: object) -> object:
+    """Recursively escape all string values in nested structures."""
+    if isinstance(value, dict):
+        return {k: _escape_value(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_escape_value(item) for item in value]
+    if isinstance(value, str):
+        return escape_latex(value)
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -246,37 +239,31 @@ def compile_latex(
         tex_path.write_text(tex_content, encoding="utf-8")
 
         try:
-            # Run pdflatex twice (for references/TOC resolution)
-            for run in range(2):
-                result = subprocess.run(
-                    [pdflatex_path, "-interaction=nonstopmode", "-halt-on-error", "resume.tex"],
-                    cwd=tmpdir,
-                    capture_output=True,
-                    text=True,
-                    timeout=timeout,
+            pdf_bytes = _run_pdflatex(pdflatex_path, tmpdir, pdf_path, timeout)
+
+            # Auto-install missing packages and retry (up to 3 rounds)
+            for attempt in range(3):
+                if pdf_bytes is not None:
+                    break
+                log_path = Path(tmpdir) / "resume.log"
+                log_text = log_path.read_text(errors="replace") if log_path.exists() else ""
+                missing = _find_missing_packages(log_text)
+                if not missing:
+                    break
+                if not _auto_install_packages(missing, pdflatex_path):
+                    break
+                logger.info(
+                    "Retry %d after installing: %s", attempt + 1, ", ".join(missing),
                 )
+                pdf_bytes = _run_pdflatex(pdflatex_path, tmpdir, pdf_path, timeout)
 
-                if result.returncode != 0 and run == 1:
-                    # Only log error on second run (first run may have unresolved refs)
-                    logger.error(
-                        "pdflatex compilation failed (run %d):\n%s",
-                        run + 1,
-                        result.stdout[-2000:] if result.stdout else "no output",
-                    )
-                    return None
-
-            if pdf_path.exists():
-                pdf_bytes = pdf_path.read_bytes()
+            if pdf_bytes is not None:
                 logger.info("LaTeX compilation successful: %d bytes", len(pdf_bytes))
-                # Store in cache (M8)
                 if use_cache:
                     from core.pdf_cache import store
 
                     store(tex_content, pdf_bytes)
-                return pdf_bytes
-
-            logger.error("pdflatex did not produce PDF output")
-            return None
+            return pdf_bytes
 
         except subprocess.TimeoutExpired:
             logger.error("pdflatex compilation timed out after %ds", timeout)
@@ -286,23 +273,164 @@ def compile_latex(
             return None
 
 
+def _run_pdflatex(
+    pdflatex_path: str, tmpdir: str, pdf_path: Path, timeout: int,
+) -> bytes | None:
+    """Run pdflatex twice and return PDF bytes or None."""
+    for run in range(2):
+        result = subprocess.run(
+            [pdflatex_path, "-interaction=nonstopmode", "-halt-on-error", "resume.tex"],
+            cwd=tmpdir,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+        if result.returncode != 0 and run == 1:
+            logger.error(
+                "pdflatex compilation failed (run %d):\n%s",
+                run + 1,
+                result.stdout[-2000:] if result.stdout else "no output",
+            )
+            return None
+
+    if pdf_path.exists():
+        return pdf_path.read_bytes()
+
+    logger.error("pdflatex did not produce PDF output")
+    return None
+
+
+def _find_missing_packages(log_text: str) -> list[str]:
+    """Parse pdflatex log to find missing .sty/.def/.cls files."""
+    # Patterns: "File `foo.sty' not found", "Encoding file `ly1enc.def' not found"
+    pattern = re.compile(r"File `([^']+\.(?:sty|def|cls))' not found")
+    matches = pattern.findall(log_text)
+    # Also catch babel language errors
+    babel_re = re.compile(r"Unknown option '(\w+)'.*babel", re.DOTALL)
+    babel_matches = babel_re.findall(log_text)
+    # Strip extension — tlmgr uses package names
+    pkgs: list[str] = []
+    for m in matches:
+        name = re.sub(r"\.(sty|def|cls)$", "", m)
+        # Common renames: ly1enc → ly1, etc.
+        name = re.sub(r"enc$", "", name) or name
+        pkgs.append(name)
+    for lang in babel_matches:
+        pkgs.append(f"babel-{lang}")
+        pkgs.append(f"hyphen-{lang}")
+    return list(dict.fromkeys(pkgs))
+
+
+def _auto_install_packages(packages: list[str], pdflatex_path: str) -> bool:
+    """Auto-install missing LaTeX packages via tlmgr (TinyTeX)."""
+    # Find tlmgr relative to pdflatex
+    pdflatex_dir = Path(pdflatex_path).parent
+    tlmgr = pdflatex_dir / "tlmgr.bat"
+    if not tlmgr.exists():
+        tlmgr = pdflatex_dir / "tlmgr"
+    if not tlmgr.exists():
+        logger.warning("tlmgr not found — cannot auto-install packages")
+        return False
+
+    logger.info("Auto-installing LaTeX packages: %s", ", ".join(packages))
+    try:
+        result = subprocess.run(
+            [str(tlmgr), "install"] + packages,
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        # tlmgr returns non-zero if some packages weren't found, but may
+        # have installed others successfully — still consider it a success
+        installed_any = "install:" in (result.stdout or "")
+        if result.returncode == 0 or installed_any:
+            logger.info("Installed packages (exit %d): %s", result.returncode, ", ".join(packages))
+            # Rebuild formats if hyphen/babel packages were installed
+            if any(p.startswith(("hyphen-", "babel-")) for p in packages):
+                _rebuild_formats(pdflatex_dir)
+            return True
+        logger.error("tlmgr install failed: %s", result.stderr[-500:])
+        return False
+    except Exception as e:
+        logger.error("tlmgr install error: %s", e)
+        return False
+
+
+def _rebuild_formats(pdflatex_dir: Path) -> None:
+    """Rebuild LaTeX formats after installing hyphenation packages."""
+    fmtutil = pdflatex_dir / "fmtutil-sys.exe"
+    if not fmtutil.exists():
+        fmtutil = pdflatex_dir / "fmtutil-sys"
+    if not fmtutil.exists():
+        return
+    try:
+        env = os.environ.copy()
+        env["PATH"] = str(pdflatex_dir) + os.pathsep + env.get("PATH", "")
+        subprocess.run(
+            [str(fmtutil), "--all"],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            env=env,
+        )
+        logger.info("LaTeX formats rebuilt successfully")
+    except Exception as e:
+        logger.warning("Format rebuild failed: %s", e)
+
+
+def render_custom_template(
+    tex_source: str,
+    context: dict,
+) -> str:
+    """Render a user-provided LaTeX template string with the given context.
+
+    Uses the same Jinja2 delimiters and escaping as built-in templates.
+
+    Args:
+        tex_source: Raw .tex content with Jinja2 delimiters.
+        context: Same context dict as render_template().
+
+    Returns:
+        Rendered .tex content as string.
+    """
+    env = jinja2.Environment(
+        loader=jinja2.BaseLoader(),
+        block_start_string=r"\BLOCK{",
+        block_end_string="}",
+        variable_start_string=r"\VAR{",
+        variable_end_string="}",
+        comment_start_string=r"\#{",
+        comment_end_string="}",
+        autoescape=False,
+    )
+    env.filters["escape_latex"] = escape_latex
+    template = env.from_string(tex_source)
+    safe_context = _escape_context_dict(context)
+    return template.render(**safe_context)
+
+
 def compile_resume(
     template_name: str,
     context: dict,
     pdflatex_path: str | None = None,
+    custom_tex: str | None = None,
 ) -> bytes | None:
     """Render template and compile to PDF in one step.
 
     Args:
-        template_name: Template name (e.g., "classic").
+        template_name: Template name (e.g., "classic") or custom template name.
         context: Template context dict.
         pdflatex_path: Optional pdflatex path override.
+        custom_tex: If provided, use this raw .tex source instead of built-in.
 
     Returns:
         PDF bytes, or None if rendering or compilation fails.
     """
     try:
-        tex_content = render_template(template_name, context)
+        if custom_tex:
+            tex_content = render_custom_template(custom_tex, context)
+        else:
+            tex_content = render_template(template_name, context)
     except (ValueError, jinja2.TemplateNotFound) as e:
         logger.error("Template rendering failed: %s", e)
         return None

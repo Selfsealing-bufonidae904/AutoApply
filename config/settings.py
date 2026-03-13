@@ -124,7 +124,7 @@ class LLMConfig(BaseModel):
 class ResumeReuseConfig(BaseModel):
     """Configuration for smart resume reuse via Knowledge Base assembly."""
     enabled: bool = True
-    min_score: float = 0.60
+    min_score: float = 0.0
     min_experience_bullets: int = 6
     scoring_method: str = "auto"  # "tfidf" | "onnx" | "auto"
     cover_letter_strategy: str = "generate"  # "generate" | "template"
@@ -146,6 +146,7 @@ class BotConfig(BaseModel):
     search_interval_seconds: int = 1800
     apply_mode: str = "full_auto"  # "full_auto" | "review" | "watch"
     watch_mode: bool = False  # Deprecated: use apply_mode instead
+    cover_letter_enabled: bool = True
     cover_letter_template: str = ""
     schedule: ScheduleConfig = ScheduleConfig()
 

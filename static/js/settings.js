@@ -5,6 +5,7 @@ import { state } from './state.js';
 import { setTags } from './tag-input.js';
 import { checkLoginSessions } from './login.js';
 import { t, getLocale, setLocale } from './i18n.js';
+import { updateAIIndicators } from './ai-status.js';
 
 const LLM_DEFAULT_MODELS = {
   anthropic: 'claude-sonnet-4-20250514',
@@ -198,6 +199,16 @@ export async function saveSettings() {
     });
     updateScheduleUI();
 
+    // Refresh AI availability indicator after config change
+    try {
+      const statusRes = await fetch('/api/setup/status');
+      const statusData = await statusRes.json();
+      state.aiAvailable = !!statusData.ai_available;
+      updateAIIndicators();
+      const banner = document.getElementById('ai-warning-banner');
+      if (banner) banner.classList.toggle('hidden', state.aiAvailable);
+    } catch { /* non-critical */ }
+
     const msg = document.getElementById('settings-saved-msg');
     msg.classList.remove('hidden');
     setTimeout(() => msg.classList.add('hidden'), 2500);
@@ -228,6 +239,29 @@ export async function changeApplyMode(mode) {
   }
 }
 
+export function initBotToggles() {
+  const adaptive = document.getElementById('set-adaptive-resume');
+  const coverLetter = document.getElementById('set-cover-letter');
+  if (adaptive) {
+    adaptive.addEventListener('change', () => {
+      fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ resume_reuse: { enabled: adaptive.checked } }),
+      }).catch(e => console.warn('Could not save adaptive resume:', e));
+    });
+  }
+  if (coverLetter) {
+    coverLetter.addEventListener('change', () => {
+      fetch('/api/config', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bot: { cover_letter_enabled: coverLetter.checked } }),
+      }).catch(e => console.warn('Could not save cover letter:', e));
+    });
+  }
+}
+
 export async function loadApplyMode() {
   try {
     const res = await fetch('/api/config');
@@ -235,7 +269,60 @@ export async function loadApplyMode() {
     const mode = (cfg.bot && cfg.bot.apply_mode) || 'full_auto';
     const sel = document.getElementById('apply-mode-select');
     if (sel) sel.value = mode;
+
+    // Load bot toggles on dashboard
+    const adaptive = document.getElementById('set-adaptive-resume');
+    const coverLetter = document.getElementById('set-cover-letter');
+    if (adaptive) adaptive.checked = (cfg.resume_reuse || {}).enabled !== false;
+    if (coverLetter) coverLetter.checked = (cfg.bot || {}).cover_letter_enabled !== false;
   } catch { }
+}
+
+// ---------------------------------------------------------------------------
+// Default Resume
+// ---------------------------------------------------------------------------
+
+export async function uploadDefaultResume(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  const form = new FormData();
+  form.append('file', file);
+  try {
+    const res = await fetch('/api/config/default-resume', { method: 'POST', body: form });
+    const data = await res.json();
+    if (data.success) {
+      _updateDefaultResumeUI(data.filename);
+    } else {
+      alert(data.error || 'Upload failed');
+    }
+  } catch (e) {
+    console.warn('Default resume upload failed:', e);
+  }
+  input.value = '';
+}
+
+export async function removeDefaultResume() {
+  try {
+    await fetch('/api/config/default-resume', { method: 'DELETE' });
+    _updateDefaultResumeUI(null);
+  } catch (e) {
+    console.warn('Default resume remove failed:', e);
+  }
+}
+
+export async function loadDefaultResume() {
+  try {
+    const res = await fetch('/api/config/default-resume');
+    const data = await res.json();
+    _updateDefaultResumeUI(data.filename);
+  } catch { }
+}
+
+function _updateDefaultResumeUI(filename) {
+  const nameEl = document.getElementById('default-resume-name');
+  const removeBtn = document.getElementById('btn-remove-default-resume');
+  if (nameEl) nameEl.textContent = filename || 'None';
+  if (removeBtn) removeBtn.classList.toggle('hidden', !filename);
 }
 
 export function onLLMProviderChange() {
@@ -271,6 +358,18 @@ export async function validateLLMKey() {
     if (data.valid) {
       status.textContent = t('settings.key_valid');
       status.style.color = '#34d399';
+      // Auto-save the validated key so it persists immediately
+      try {
+        await fetch('/api/config', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ llm: { provider, api_key: apiKey, model: model || '' } }),
+        });
+        state.aiAvailable = true;
+        updateAIIndicators();
+        const banner = document.getElementById('ai-warning-banner');
+        if (banner) banner.classList.toggle('hidden', true);
+      } catch { /* save failed silently — user can still use main Save */ }
     } else {
       status.textContent = t('settings.key_invalid');
       status.style.color = '#f87171';

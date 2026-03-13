@@ -186,7 +186,8 @@
     "clear_feed": "Clear",
     "close_browser": "Close Browser",
     "add_tag": "Add",
-    "approve_and_apply": "Approve & Apply"
+    "approve_and_apply": "Approve & Apply",
+    "upload": "Upload"
   },
 
   "bot": {
@@ -286,6 +287,13 @@
     "platform_login_hint": "Open a browser to log into your job platforms. Sessions are saved across restarts.",
     "open_linkedin_login": "Open LinkedIn Login",
     "open_indeed_login": "Open Indeed Login",
+    "section_automation": "Automation Options",
+    "automation_description": "Control how the bot generates documents for each application.",
+    "adaptive_resume": "Adaptive Resume",
+    "adaptive_resume_hint": "Tailor resume to each job using Knowledge Base entries. When off, uses your default resume.",
+    "cover_letter": "Cover Letter",
+    "cover_letter_hint": "Generate a tailored cover letter for each application. When off, no cover letter is attached.",
+    "default_resume": "Default Resume:",
     "section_schedule": "Schedule",
     "schedule_hint": "Auto-start and stop the bot on a time schedule. The bot only runs during the configured window.",
     "schedule_active": "Active",
@@ -439,7 +447,11 @@
     "invalid_filename": "Invalid filename",
     "invalid_filename_detail": "Invalid filename. Use only letters, numbers, hyphens, underscores, spaces, and .txt extension",
     "content_required": "content is required",
-    "file_not_found": "File not found"
+    "file_not_found": "File not found",
+    "template_not_found": "Template not found",
+    "pdflatex_not_found": "pdflatex not found — LaTeX compilation unavailable",
+    "compilation_failed": "LaTeX compilation failed",
+    "invalid_request": "Invalid request"
   },
 
   "dashboard": {
@@ -560,6 +572,10 @@
     "col_subsection": "Context",
     "col_job_types": "Job Types",
     "col_tags": "Tags",
+    "col_job_title": "Job Title",
+    "col_company": "Company",
+    "col_dates": "Dates",
+    "col_location": "Location",
     "col_source": "Source",
     "col_actions": "Actions",
     "filter_all": "All Categories",
@@ -591,7 +607,19 @@
     "template": "Template",
     "font_family": "Font Family",
     "font_size": "Font Size",
-    "margin": "Page Margin"
+    "margin": "Page Margin",
+    "templates_title": "Resume Templates",
+    "templates_desc": "Upload your own Overleaf/LaTeX templates (.tex files). Use Jinja2 variables like \\VAR{name}, \\VAR{email}, \\BLOCK{for entry in experience} for dynamic content.",
+    "upload_template": "Upload Template",
+    "template_name": "Template Name",
+    "template_desc": "Description",
+    "set_default": "Set Default",
+    "default_badge": "Default",
+    "custom_badge": "Custom",
+    "builtin_badge": "Built-in",
+    "no_custom_templates": "No custom templates yet. Upload a .tex file to get started.",
+    "template_saved": "Template saved successfully",
+    "template_deleted": "Template deleted"
   },
 
   "builder": {
@@ -642,5 +670,30 @@
     "categories_missing": "Sections Missing",
     "no_gaps": "No gaps found — excellent match!",
     "analyzing": "Analyzing ATS compatibility..."
+  },
+  "portal_auth": {
+    "missing_fields": "Domain, username, and password are required.",
+    "credential_saved": "Portal credential saved successfully.",
+    "credential_deleted": "Portal credential deleted.",
+    "not_found": "No credential found for this domain.",
+    "invalid_decision": "Decision must be 'done' or 'skip'.",
+    "not_awaiting_login": "Bot is not currently waiting for a login.",
+    "decision_set": "Login decision received.",
+    "login_required": "Login required at {domain} — please log in manually.",
+    "auto_login_failed": "Auto-login failed at {domain}.",
+    "auto_login_success": "Auto-login succeeded at {domain}."
+  },
+  "login_gate": {
+    "title": "Login Required",
+    "description": "The bot detected a login wall. Please log in to this portal, then click \"I've Logged In\" to continue.",
+    "domain_label": "Portal:",
+    "type_label": "Type:",
+    "open_portal": "Open portal",
+    "save_hint": "Optionally save your credentials below for future auto-login:",
+    "username_label": "Username / Email",
+    "password_label": "Password",
+    "done_button": "I've Logged In",
+    "skip_button": "Skip This Job",
+    "unknown": "Unknown portal"
   }
 }

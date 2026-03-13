@@ -15,7 +15,7 @@ let kbSearch = '';
 // ---------------------------------------------------------------------------
 
 export async function loadKnowledgeBase() {
-  await Promise.all([loadKBStats(), loadKBEntries()]);
+  await Promise.all([loadKBStats(), loadKBEntries(), loadKBDocuments()]);
 }
 
 async function loadKBStats() {
@@ -66,26 +66,30 @@ export async function loadKBEntries() {
     let html = `<table class="data-table kb-table" role="table" aria-label="${escAttr(t('kb.entries_title'))}">
       <thead><tr>
         <th data-i18n="kb.col_category">${escHtml(t('kb.col_category'))}</th>
-        <th data-i18n="kb.col_subsection">${escHtml(t('kb.col_subsection'))}</th>
+        <th>${escHtml(t('kb.col_job_title') || 'Job Title')}</th>
+        <th>${escHtml(t('kb.col_company') || 'Company')}</th>
         <th data-i18n="kb.col_text">${escHtml(t('kb.col_text'))}</th>
-        <th data-i18n="kb.col_tags">${escHtml(t('kb.col_tags'))}</th>
+        <th>${escHtml(t('kb.col_dates') || 'Dates')}</th>
+        <th>${escHtml(t('kb.col_location') || 'Location')}</th>
         <th data-i18n="kb.col_actions">${escHtml(t('kb.col_actions'))}</th>
       </tr></thead><tbody>`;
 
     for (const e of entries) {
       const catLabel = t(`kb.category_${e.category}`) || e.category || '';
       const text = (e.text || '').length > 120 ? e.text.slice(0, 120) + '…' : (e.text || '');
-      const tags = e.tags ? (typeof e.tags === 'string' ? e.tags : JSON.stringify(e.tags)) : '';
+      const dates = [e.role_start_date, e.role_end_date].filter(Boolean).join(' – ');
       html += `<tr>
         <td><span class="badge badge-${escAttr(e.category || 'info')}">${escHtml(catLabel)}</span></td>
-        <td>${escHtml(e.subsection || '')}</td>
+        <td>${escHtml(e.role_title || '')}</td>
+        <td>${escHtml(e.role_company || e.subsection || '')}</td>
         <td class="kb-text-cell" title="${escAttr(e.text || '')}">${escHtml(text)}</td>
-        <td>${escHtml(tags)}</td>
+        <td>${escHtml(dates)}</td>
+        <td>${escHtml(e.role_location || '')}</td>
         <td class="kb-actions no-row-click">
-          <button type="button" class="btn btn-sm btn-secondary" data-kb-edit="${e.id}"
+          <button type="button" class="btn btn-xs" data-kb-edit="${e.id}"
                   aria-label="${escAttr(t('kb.edit_entry'))}"
                   data-i18n="kb.edit_entry">Edit</button>
-          <button type="button" class="btn btn-sm btn-danger" data-kb-delete="${e.id}"
+          <button type="button" class="btn btn-xs btn-danger" data-kb-delete="${e.id}"
                   aria-label="${escAttr(t('kb.delete_entry'))}"
                   data-i18n="kb.delete_entry">Delete</button>
         </td>
@@ -173,7 +177,7 @@ export async function uploadKBDocument() {
       input.value = '';
       loadKnowledgeBase();
     } else {
-      const msg = data.description || data.message || 'Upload failed';
+      const msg = data.error || data.description || data.message || 'Upload failed';
       if (statusEl) {
         statusEl.textContent = t('kb.upload_error').replace('{error}', msg);
         statusEl.className = 'kb-upload-status text-danger';
@@ -211,10 +215,28 @@ export async function editKBEntry(id) {
               .join('')}
           </select>
         </label>
+        ${entry.role_title || entry.role_company ? `
+        <div class="flex-row gap-md" style="opacity:0.7">
+          <label style="flex:1">Job Title
+            <input class="form-input" value="${escAttr(entry.role_title || '')}" disabled>
+          </label>
+          <label style="flex:1">Company
+            <input class="form-input" value="${escAttr(entry.role_company || '')}" disabled>
+          </label>
+          <label style="flex:1">Dates
+            <input class="form-input" value="${escAttr([entry.role_start_date, entry.role_end_date].filter(Boolean).join(' – '))}" disabled>
+          </label>
+          <label style="flex:1">Location
+            <input class="form-input" value="${escAttr(entry.role_location || '')}" disabled>
+          </label>
+        </div>
+        <p style="font-size:.75rem;color:var(--text-dim);margin:-8px 0 4px">Role details are shared across all entries for this position. Edit roles separately.</p>
+        ` : `
         <label>${escHtml(t('kb.col_subsection'))}
           <input id="kb-edit-subsection" class="form-input" value="${escAttr(entry.subsection || '')}"
                  aria-label="${escAttr(t('kb.col_subsection'))}">
         </label>
+        `}
         <label>${escHtml(t('kb.col_text'))}
           <textarea id="kb-edit-text" class="form-input" rows="5"
                     aria-label="${escAttr(t('kb.col_text'))}">${escHtml(entry.text || '')}</textarea>
@@ -413,6 +435,129 @@ function renderATSResult(data, el) {
   el.innerHTML = html;
   _applyDataI18n(el);
 }
+
+// ---------------------------------------------------------------------------
+// Template management
+// ---------------------------------------------------------------------------
+
+async function loadTemplates() {
+  try {
+    const res = await fetch('/api/templates');
+    if (!res.ok) return;
+    const data = await res.json();
+    renderTemplateList(data.templates || []);
+    populateTemplatePickers(data.templates || []);
+  } catch { /* ignore */ }
+}
+
+function renderTemplateList(templates) {
+  const el = document.getElementById('tpl-list');
+  if (!el) return;
+  const custom = templates.filter(t => t.type === 'custom');
+  if (!custom.length) {
+    el.innerHTML = `<p class="text-muted">${escHtml(t('reuse.no_custom_templates'))}</p>`;
+    return;
+  }
+  const rows = custom.map(tpl => `
+    <div class="flex-row gap-sm" style="align-items:center; padding:6px 0; border-bottom:1px solid var(--border-color);">
+      <strong>${escHtml(tpl.name)}</strong>
+      ${tpl.description ? `<span class="text-muted">— ${escHtml(tpl.description)}</span>` : ''}
+      ${tpl.is_default ? `<span class="badge badge-primary">${escHtml(t('reuse.default_badge'))}</span>` : ''}
+      <span class="badge">${escHtml(t('reuse.custom_badge'))}</span>
+      <span style="flex:1;"></span>
+      ${!tpl.is_default ? `<button type="button" class="btn btn-sm" onclick="setTemplateDefault(${tpl.id})" aria-label="Set as default">${escHtml(t('reuse.set_default'))}</button>` : ''}
+      <button type="button" class="btn btn-sm btn-danger" onclick="deleteTemplate(${tpl.id})" aria-label="Delete template">&times;</button>
+    </div>
+  `).join('');
+  el.innerHTML = rows;
+}
+
+function populateTemplatePickers(templates) {
+  const selects = [
+    document.getElementById('kb-preview-template'),
+    document.getElementById('rb-template-select'),
+  ];
+  for (const sel of selects) {
+    if (!sel) continue;
+    const currentVal = sel.value;
+    // Keep built-in options, add custom
+    const builtIn = Array.from(sel.options).filter(o => !o.value.startsWith('custom:'));
+    sel.innerHTML = '';
+    builtIn.forEach(o => sel.add(o));
+    const customTemplates = templates.filter(t => t.type === 'custom');
+    if (customTemplates.length) {
+      const group = document.createElement('optgroup');
+      group.label = 'Custom Templates';
+      customTemplates.forEach(tpl => {
+        const opt = document.createElement('option');
+        opt.value = `custom:${tpl.name}`;
+        opt.textContent = tpl.name + (tpl.is_default ? ' ★' : '');
+        group.appendChild(opt);
+      });
+      sel.appendChild(group);
+    }
+    // Restore selection or pick default
+    const defaultCustom = templates.find(t => t.is_default && t.type === 'custom');
+    if (defaultCustom) {
+      sel.value = `custom:${defaultCustom.name}`;
+    } else if (currentVal) {
+      sel.value = currentVal;
+    }
+  }
+}
+
+window.uploadTemplate = async function() {
+  const name = document.getElementById('tpl-upload-name')?.value?.trim();
+  const desc = document.getElementById('tpl-upload-desc')?.value?.trim() || '';
+  const fileInput = document.getElementById('tpl-upload-file');
+  const isDefault = document.getElementById('tpl-upload-default')?.checked || false;
+  const statusEl = document.getElementById('tpl-upload-status');
+
+  if (!fileInput?.files?.length) {
+    if (statusEl) statusEl.textContent = 'Please select a .tex file';
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  formData.append('name', name || fileInput.files[0].name.replace(/\.tex$/, ''));
+  formData.append('description', desc);
+  formData.append('is_default', isDefault ? 'true' : 'false');
+
+  try {
+    if (statusEl) statusEl.textContent = 'Uploading...';
+    const res = await fetch('/api/templates', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok) {
+      if (statusEl) statusEl.textContent = data.error || data.description || 'Upload failed';
+      return;
+    }
+    if (statusEl) statusEl.textContent = t('reuse.template_saved');
+    // Clear form
+    if (fileInput) fileInput.value = '';
+    document.getElementById('tpl-upload-name').value = '';
+    document.getElementById('tpl-upload-desc').value = '';
+    document.getElementById('tpl-upload-default').checked = false;
+    await loadTemplates();
+  } catch (err) {
+    if (statusEl) statusEl.textContent = 'Upload failed: ' + err.message;
+  }
+};
+
+window.setTemplateDefault = async function(id) {
+  try {
+    const res = await fetch(`/api/templates/${id}/default`, { method: 'PUT' });
+    if (res.ok) await loadTemplates();
+  } catch { /* ignore */ }
+};
+
+window.deleteTemplate = async function(id) {
+  if (!confirm('Delete this template?')) return;
+  try {
+    const res = await fetch(`/api/templates/${id}`, { method: 'DELETE' });
+    if (res.ok) await loadTemplates();
+  } catch { /* ignore */ }
+};
 
 // ---------------------------------------------------------------------------
 // Event delegation init

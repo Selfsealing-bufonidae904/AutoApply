@@ -18,6 +18,7 @@ from pathlib import Path
 from flask import Blueprint, abort, jsonify, request
 
 import app_state
+from config.settings import load_config
 from core.i18n import t
 
 logger = logging.getLogger(__name__)
@@ -128,9 +129,9 @@ def upload_document():
             file.save(tmp)
             tmp_path = Path(tmp.name)
 
-        # Get LLM config from app state
-        llm_config = getattr(app_state, "config", None)
-        llm_cfg = getattr(llm_config, "llm", None) if llm_config else None
+        # Get LLM config from saved config file
+        app_config = load_config()
+        llm_cfg = app_config.llm if app_config else None
 
         from core.knowledge_base import KnowledgeBase
 
@@ -197,8 +198,8 @@ def upload_document_async():
         logger.error("Failed to save upload: %s", e)
         abort(500, description=t("kb.upload_error", error=str(e)))
 
-    llm_config = getattr(app_state, "config", None)
-    llm_cfg = getattr(llm_config, "llm", None) if llm_config else None
+    app_config = load_config()
+    llm_cfg = app_config.llm if app_config else None
 
     upload_dir = Path.home() / ".autoapply" / "uploads"
     upload_dir.mkdir(parents=True, exist_ok=True)
@@ -393,6 +394,7 @@ def update_entry(entry_id: int):
         entry_id=entry_id,
         text=data.get("text"),
         subsection=data.get("subsection"),
+        role_id=data.get("role_id"),
         job_types=data.get("job_types"),
         tags=data.get("tags"),
     )
@@ -513,53 +515,62 @@ def delete_preset(preset_id: int):
 
 @kb_bp.route("/api/kb/preview", methods=["POST"])
 def preview_resume():
-    """Preview a resume assembled from KB entries with a chosen template.
+    """Preview a resume assembled from KB entries via LLM generation.
+
+    The LLM is strictly instructed to use ONLY the provided KB data.
 
     Request body:
-        template: str (classic/modern/academic/minimal)
+        template: str (ignored for LLM generation, kept for compatibility)
         entry_ids: list[int] (optional — if omitted, auto-select from JD)
-        jd_text: str (optional — for auto-selection scoring)
+        jd_text: str (required — for tailoring and auto-selection scoring)
     """
     db = _get_db()
     data = request.get_json(silent=True)
     if not data:
         abort(400, description=t("errors.invalid_request"))
 
-    template = data.get("template", "classic")
     entry_ids = data.get("entry_ids")
     jd_text = data.get("jd_text", "")
 
+    if not jd_text:
+        abort(400, description=t("errors.invalid_request"))
+
+    from core.ai_engine import check_ai_available, generate_resume_from_kb
     from core.knowledge_base import KnowledgeBase
-    from core.latex_compiler import compile_resume, find_pdflatex
     from core.resume_assembler import _build_context, _select_entries
+    from core.resume_renderer import render_resume_to_pdf
     from core.resume_scorer import score_kb_entries
 
     kb = KnowledgeBase(db)
 
-    # Get profile from config
-    config = getattr(app_state, "config", None)
-    profile_cfg = getattr(config, "profile", None) if config else None
+    # Get profile and LLM config
+    app_config = load_config()
+    llm_config = app_config.llm if app_config else None
+    if not check_ai_available(llm_config):
+        abort(400, description="No AI provider configured. Add an API key in Settings.")
+
+    profile_cfg = app_config.profile if app_config else None
     profile = {
         "name": getattr(profile_cfg, "full_name", "") or "",
         "email": getattr(profile_cfg, "email", "") or "",
-        "phone": getattr(profile_cfg, "phone", "") or "",
+        "phone": getattr(profile_cfg, "phone_full", "") or "",
         "location": getattr(profile_cfg, "location", "") or "",
+        "linkedin_url": getattr(profile_cfg, "linkedin_url", "") or "",
     }
 
     if entry_ids:
         # Use specific entries
         entries = db.get_kb_entries_by_ids(entry_ids)
-        # Group by category
         selected: dict[str, list[dict]] = {}
         for e in entries:
             cat = e.get("category", "experience")
             selected.setdefault(cat, []).append(e)
-    elif jd_text:
+    else:
         # Auto-select via scoring
         all_entries = kb.get_all_entries(active_only=True, limit=2000)
         if not all_entries:
             abort(400, description=t("kb.entries_empty"))
-        reuse_cfg = getattr(config, "resume_reuse", None) if config else None
+        reuse_cfg = app_config.resume_reuse if app_config else None
         scored = score_kb_entries(jd_text, all_entries, reuse_cfg)
         if not scored:
             abort(400, description=t("kb.entries_empty"))
@@ -568,24 +579,160 @@ def preview_resume():
         if selected_result is None:
             abort(400, description=t("kb.entries_empty"))
         selected = selected_result
-    else:
-        abort(400, description=t("errors.invalid_request"))
 
-    # Build context and compile
+    # Build structured context and generate via LLM
     context = _build_context(profile, selected)
 
-    pdflatex = find_pdflatex()
-    if pdflatex is None:
-        abort(503, description=t("errors.pdflatex_not_found"))
+    try:
+        resume_md = generate_resume_from_kb(context, jd_text, llm_config)
+    except RuntimeError as e:
+        logger.error("LLM generation failed in preview: %s", e)
+        abort(500, description=f"AI generation failed: {e}")
 
-    pdf_bytes = compile_resume(template, context, pdflatex_path=pdflatex)
-    if pdf_bytes is None:
-        abort(500, description=t("errors.compilation_failed"))
+    # Render markdown to PDF via ReportLab
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+        tmp_path = Path(tmp.name)
+    try:
+        render_resume_to_pdf(resume_md, tmp_path)
+        pdf_bytes = tmp_path.read_bytes()
+    finally:
+        tmp_path.unlink(missing_ok=True)
 
     from flask import Response
 
     return Response(
         pdf_bytes,
         mimetype="application/pdf",
-        headers={"Content-Disposition": f"inline; filename=preview_{template}.pdf"},
+        headers={"Content-Disposition": "inline; filename=preview_resume.pdf"},
     )
+
+
+# ---------------------------------------------------------------------------
+# Custom LaTeX Template Management
+# ---------------------------------------------------------------------------
+
+
+@kb_bp.route("/api/templates", methods=["GET"])
+def list_templates():
+    """List all templates — built-in + custom."""
+    db = _get_db()
+    from core.latex_compiler import AVAILABLE_TEMPLATES
+
+    built_in = [
+        {"name": name, "type": "built-in", "is_default": False}
+        for name in AVAILABLE_TEMPLATES
+    ]
+    custom = db.get_custom_templates()
+    custom_list = [
+        {
+            "id": t["id"],
+            "name": t["name"],
+            "description": t.get("description", ""),
+            "type": "custom",
+            "is_default": bool(t["is_default"]),
+            "created_at": t["created_at"],
+        }
+        for t in custom
+    ]
+    # Check if any custom is default; if so, mark built-in accordingly
+    has_custom_default = any(c["is_default"] for c in custom_list)
+    if not has_custom_default:
+        # Mark "classic" as implicit default
+        for b in built_in:
+            if b["name"] == "classic":
+                b["is_default"] = True
+    return jsonify({"templates": built_in + custom_list})
+
+
+@kb_bp.route("/api/templates", methods=["POST"])
+def upload_template():
+    """Upload a custom LaTeX template (.tex file or raw text)."""
+    db = _get_db()
+
+    # Accept either file upload or JSON body
+    if request.content_type and "multipart/form-data" in request.content_type:
+        file = request.files.get("file")
+        if not file or not file.filename:
+            abort(400, description=t("errors.invalid_request"))
+        name = request.form.get("name", "").strip()
+        if not name:
+            name = Path(file.filename).stem
+        description = request.form.get("description", "").strip()
+        is_default = request.form.get("is_default", "false").lower() == "true"
+        tex_content = file.read().decode("utf-8", errors="replace")
+    else:
+        data = request.get_json(silent=True)
+        if not data or not data.get("tex_content"):
+            abort(400, description=t("errors.invalid_request"))
+        name = data.get("name", "").strip()
+        if not name:
+            abort(400, description=t("errors.invalid_request"))
+        description = data.get("description", "").strip()
+        is_default = bool(data.get("is_default", False))
+        tex_content = data["tex_content"]
+
+    # Validate it's actually LaTeX
+    if "\\documentclass" not in tex_content and "\\begin{document}" not in tex_content:
+        abort(400, description="Invalid LaTeX template — must contain \\documentclass or \\begin{document}")
+
+    template_id = db.save_custom_template(
+        name=name,
+        tex_content=tex_content,
+        description=description,
+        is_default=is_default,
+    )
+    return jsonify({"id": template_id, "name": name, "message": "Template saved"}), 201
+
+
+@kb_bp.route("/api/templates/<int:template_id>", methods=["GET"])
+def get_template(template_id: int):
+    """Get a custom template's full content."""
+    db = _get_db()
+    tmpl = db.get_custom_template(template_id)
+    if not tmpl:
+        abort(404, description=t("errors.template_not_found"))
+    return jsonify(tmpl)
+
+
+@kb_bp.route("/api/templates/<int:template_id>", methods=["PUT"])
+def update_template(template_id: int):
+    """Update a custom template."""
+    db = _get_db()
+    data = request.get_json(silent=True)
+    if not data:
+        abort(400, description=t("errors.invalid_request"))
+
+    existing = db.get_custom_template(template_id)
+    if not existing:
+        abort(404, description=t("errors.template_not_found"))
+
+    tex_content = data.get("tex_content", existing["tex_content"])
+    name = data.get("name", existing["name"]).strip()
+    description = data.get("description", existing.get("description", "")).strip()
+    is_default = data.get("is_default", existing["is_default"])
+
+    db.save_custom_template(
+        name=name,
+        tex_content=tex_content,
+        description=description,
+        is_default=bool(is_default),
+    )
+    return jsonify({"message": "Template updated"})
+
+
+@kb_bp.route("/api/templates/<int:template_id>/default", methods=["PUT"])
+def set_template_default(template_id: int):
+    """Set a custom template as default."""
+    db = _get_db()
+    if not db.set_default_template(template_id):
+        abort(404, description=t("errors.template_not_found"))
+    return jsonify({"message": "Default template updated"})
+
+
+@kb_bp.route("/api/templates/<int:template_id>", methods=["DELETE"])
+def delete_template(template_id: int):
+    """Delete a custom template."""
+    db = _get_db()
+    if not db.delete_custom_template(template_id):
+        abort(404, description=t("errors.template_not_found"))
+    return jsonify({"message": "Template deleted"})
